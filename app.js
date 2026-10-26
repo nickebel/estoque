@@ -182,10 +182,90 @@ $("bootstrap-admin-form").addEventListener("submit",async e=>{
   finally{button.disabled=false;button.textContent="Criar administrador"}
 });
 
+
+function applyRoleUI(){
+  const role=currentUser?.role||"admin";
+  const individual=Boolean(currentUser&&!currentUser.legacy);
+  const admin=individual&&role==="admin";
+  $("nav-users").classList.toggle("hidden",!admin);
+  const canWrite=["admin","manager","operator"].includes(role);
+  $("product-form").closest(".panel").classList.toggle("hidden",REMOTE_MODE&&!canWrite);
+  $("movement-form").closest(".panel").classList.toggle("hidden",REMOTE_MODE&&!canWrite);
+  const backupCard=$("backup-export-card");
+  if(backupCard)backupCard.classList.toggle("hidden",REMOTE_MODE&&!["admin","manager"].includes(role));
+  if(REMOTE_MODE&&currentUser){
+    $("storage-status").textContent="Conectado: "+currentUser.displayName+" · "+({admin:"Administrador",manager:"Gerente",operator:"Operador",viewer:"Consulta"}[role]||"Equipe");
+  }
+}
+function dateOrDash(value){return value?dateFmt(value):"Nunca";}
+const userRoleOptions=[["admin","Administrador"],["manager","Gerente"],["operator","Operador"],["viewer","Consulta"]];
+function renderUsers(){
+  $("users-count").textContent=usersList.length+" usuário(s)";
+  $("users-empty").classList.toggle("hidden",usersList.length>0);
+  $("users-table").innerHTML=usersList.map(user=>{
+    const roleOptions=userRoleOptions.map(([value,label])=>'<option value="'+value+'"'+(user.role===value?" selected":"")+'>'+label+'</option>').join("");
+    return '<tr data-user-row="'+safe(user.id)+'"><td><strong>'+safe(user.username)+'</strong></td>'+
+      '<td><input data-user-name maxlength="80" aria-label="Nome exibido" value="'+safe(user.displayName)+'"></td>'+
+      '<td><select data-user-role aria-label="Perfil">'+roleOptions+'</select></td>'+
+      '<td><select data-user-active aria-label="Status"><option value="true"'+(user.active?" selected":"")+'>Ativo</option><option value="false"'+(!user.active?" selected":"")+'>Inativo</option></select></td>'+
+      '<td>'+safe(dateOrDash(user.lastLoginAt))+'</td>'+
+      '<td><input data-user-password type="password" autocomplete="new-password" minlength="12" maxlength="128" placeholder="Deixe vazio para manter" aria-label="Nova senha"></td>'+
+      '<td><button class="btn small primary" data-user-save type="button">Salvar</button></td></tr>';
+  }).join("");
+}
+async function loadUsers(){
+  const rows=await apiRequest("/api/users");
+  usersList=Array.isArray(rows)?rows:[];
+  renderUsers();
+}
+$("refresh-users").addEventListener("click",async()=>{
+  const button=$("refresh-users");button.disabled=true;
+  try{await loadUsers();msg("Lista de acessos atualizada.");}
+  catch(error){msg(error.message)}
+  finally{button.disabled=false}
+});
+$("user-create-form").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const button=$("user-create-submit"),error=$("user-create-error");
+  button.disabled=true;button.textContent="Criando…";error.textContent="";
+  try{
+    await apiRequest("/api/users",{method:"POST",body:{
+      username:$("new-user-username").value.trim(),
+      displayName:$("new-user-name").value.trim(),
+      password:$("new-user-password").value,
+      role:$("new-user-role").value
+    }});
+    $("user-create-form").reset();
+    await loadUsers();
+    msg("Usuário criado. Entregue a senha individual por um canal seguro.");
+  }catch(err){error.textContent=err.message||"Não foi possível criar o usuário."}
+  finally{button.disabled=false;button.textContent="Criar usuário"}
+});
+$("users-table").addEventListener("click",async e=>{
+  const button=e.target.closest("[data-user-save]");
+  if(!button)return;
+  const row=button.closest("[data-user-row]");
+  const id=row?.dataset.userRow;
+  if(!id)return;
+  button.disabled=true;button.textContent="Salvando…";
+  try{
+    const password=row.querySelector("[data-user-password]").value;
+    const body={
+      displayName:row.querySelector("[data-user-name]").value.trim(),
+      role:row.querySelector("[data-user-role]").value,
+      active:row.querySelector("[data-user-active]").value==="true"
+    };
+    if(password)body.password=password;
+    await apiRequest("/api/users/"+encodeURIComponent(id),{method:"PUT",body});
+    await loadUsers();
+    msg(password?"Acesso atualizado e senha redefinida.":"Acesso atualizado.");
+  }catch(error){msg(error.message)}
+  finally{button.disabled=false;button.textContent="Salvar"}
+});
 function status(p){if(Number(p.qty)<=0)return '<span class="pill zero">Sem estoque</span>';if(Number(p.qty)<=Number(p.min||0))return '<span class="pill low">Estoque baixo</span>';return '<span class="pill">Disponível</span>'}
 function qty(p){return num(p.qty)+" "+p.unit}
 function findProducts(query){const q=norm(query);return products.filter(p=>norm(p.name+" "+p.category+" "+p.notes).includes(q))}
-function showView(v){document.querySelectorAll(".view").forEach(el=>el.classList.toggle("active",el.id==="view-"+v));document.querySelectorAll("[data-view]").forEach(el=>el.classList.toggle("active",el.dataset.view===v));$("crumb").textContent=({inicio:"Visão geral",produtos:"Produtos",movimentacoes:"Movimentações",relatorios:"Relatórios e backup"})[v]||"Visão geral";window.scrollTo({top:0,behavior:"smooth"})}
+function showView(v){document.querySelectorAll(".view").forEach(el=>el.classList.toggle("active",el.id==="view-"+v));document.querySelectorAll("[data-view]").forEach(el=>el.classList.toggle("active",el.dataset.view===v));$("crumb").textContent=({inicio:"Visão geral",produtos:"Produtos",movimentacoes:"Movimentações",relatorios:"Relatórios e backup",acessos:"Acessos da equipe"})[v]||"Visão geral";if(v==="acessos"&&currentUser?.role==="admin"&&!currentUser.legacy)loadUsers().catch(error=>msg(error.message));window.scrollTo({top:0,behavior:"smooth"})}
 document.querySelectorAll("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));
 document.querySelectorAll("[data-goto]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.goto)));
 $("today").textContent=new Date().toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"short",year:"numeric"});
@@ -238,6 +318,9 @@ const f=norm($("product-filter").value);
 const filtered=products.filter(p=>norm(p.name+" "+p.category).includes(f)).sort((a,b)=>a.name.localeCompare(b.name,"pt-BR"));
 $("products-table").innerHTML=filtered.map(p=>'<tr><td><strong>'+safe(p.name)+'</strong><div class="subline">'+safe(p.notes)+'</div></td><td>'+safe(p.category||"—")+'</td><td>'+safe(qty(p))+'</td><td>'+num(p.min||0)+' '+safe(p.unit)+'</td><td>'+status(p)+'</td><td><button class="btn small" data-edit="'+safe(p.id)+'">Editar</button> <button class="btn small danger" data-delete="'+safe(p.id)+'">Excluir</button></td></tr>').join("");
 $("products-empty").classList.toggle("hidden",filtered.length>0);
+const roleForActions=currentUser?.role||"admin";
+document.querySelectorAll("#products-table [data-edit]").forEach(button=>button.classList.toggle("hidden",REMOTE_MODE&&!["admin","manager","operator"].includes(roleForActions)));
+document.querySelectorAll("#products-table [data-delete]").forEach(button=>button.classList.toggle("hidden",REMOTE_MODE&&roleForActions!=="admin"));
 $("m-product").innerHTML='<option value="">Selecione um produto</option>'+products.slice().sort((a,b)=>a.name.localeCompare(b.name,"pt-BR")).map(p=>'<option value="'+safe(p.id)+'">'+safe(p.name)+' ('+safe(qty(p))+')</option>').join("");
 $("movements-table").innerHTML=moves.slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,100).map(m=>'<tr><td>'+safe(dateFmt(m.date))+'</td><td>'+safe(m.name)+'</td><td><span class="pill '+(m.type==="saida"?"low":"")+'">'+(m.type==="saida"?"Saída":"Entrada")+'</span></td><td>'+safe(num(m.qty))+' '+safe(m.unit)+'</td><td>'+safe(num(m.after))+' '+safe(m.unit)+'</td><td>'+safe(m.note||"—")+'</td></tr>').join("");
 $("movements-empty").classList.toggle("hidden",moves.length>0);
