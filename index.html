@@ -78,7 +78,7 @@
 </main>
 </div>
 <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
-<div id="login-overlay" class="login-overlay hidden"><form id="login-form" class="login-card"><div class="login-mark">▦</div><h2>Estoque da Padaria</h2><p>Entre com a senha de acesso da equipe para consultar o estoque compartilhado.</p><div class="field"><label for="login-password">Senha da equipe</label><input id="login-password" type="password" autocomplete="current-password" placeholder="Digite a senha" required></div><button id="login-submit" class="btn primary" type="submit">Entrar no estoque</button><div id="login-error" class="login-error" role="status"></div></form></div>
+<div id="login-overlay" class="login-overlay hidden"><form id="login-form" class="login-card"><div class="login-mark">▦</div><h2>Estoque da Padaria</h2><p>Entre com a senha de acesso da equipe para consultar o estoque compartilhado.</p><p id="local-data-warning" class="hidden" style="padding:10px;background:#fff1de;border-radius:8px;color:#80580d;font-size:12px"></p><div class="field"><label for="login-password">Senha da equipe</label><input id="login-password" type="password" autocomplete="current-password" placeholder="Digite a senha" required></div><button id="login-submit" class="btn primary" type="submit">Entrar no estoque</button><div id="login-error" class="login-error" role="status"></div></form></div>
 <script src="./api-config.js"></script>
 <script>
 (function(){
@@ -120,13 +120,19 @@ async function refreshRemote(){
   const result=await Promise.all([apiRequest("/api/products"),apiRequest("/api/movements")]);
   products=Array.isArray(result[0])?result[0]:[];
   moves=Array.isArray(result[1])?result[1]:[];
-  localStorage.setItem(STORE,JSON.stringify({products,moves,cachedAt:new Date().toISOString()}));
   render();
 }
 async function initRemote(){
   if(!REMOTE_MODE){$("storage-status").textContent="Modo local · dados neste dispositivo";return}
   enableRemoteActions();
   $("storage-status").textContent="Banco online · acesso por senha";
+  try {
+    const localCopy=JSON.parse(localStorage.getItem(STORE)||"{}");
+    const count=Array.isArray(localCopy.products)?localCopy.products.length:0;
+    const warning=$("local-data-warning");
+    if(count>0){warning.textContent="Este aparelho ainda tem "+count+" produto(s) salvos localmente. Eles não serão enviados ao banco automaticamente. Exporte um backup antes de migrar o estoque.";warning.classList.remove("hidden");}
+    else warning.classList.add("hidden");
+  } catch {}
   $("login-overlay").classList.remove("hidden");
   if(authToken){
     try{
