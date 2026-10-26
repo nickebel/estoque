@@ -1,7 +1,7 @@
 {
-  "name": "Estoque da Padaria",
-  "short_name": "Estoque",
-  "description": "Controle de produtos, quantidades e movimentações da padaria.",
+  "name": "Capricho | Gestão de Estoque",
+  "short_name": "Capricho",
+  "description": "Gestão de estoque da Panificação Capricho: produtos, níveis mínimos, entradas, saídas e relatórios.",
   "id": "./",
   "start_url": "./",
   "scope": "./",
@@ -11,8 +11,8 @@
     "minimal-ui"
   ],
   "orientation": "any",
-  "background_color": "#f6f7fb",
-  "theme_color": "#282b4a",
+  "background_color": "#F3E9DC",
+  "theme_color": "#5E3023",
   "icons": [
     {
       "src": "./icon-192.png",
@@ -24,7 +24,7 @@
       "src": "./icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "any maskable"
     },
     {
       "src": "./icon.svg",

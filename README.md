@@ -1,6 +1,6 @@
-# Estoque da Padaria
+# Capricho — Gestão de Estoque
 
-Aplicação web simples para cadastrar produtos, acompanhar saldo e gerar relatórios PDF.
+Sistema de gestão de estoque da Panificação Capricho para computador e celular, com cadastro de produtos, controle de entradas e saídas, alertas de estoque baixo e relatórios em PDF.
 
 ## Funcionalidades
 

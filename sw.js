@@ -1,4 +1,4 @@
-const CACHE_NAME = "estoque-padaria-v2";
+const CACHE_NAME = "estoque-capricho-v3";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./api-config.js", "./icon-192.png", "./icon-512.png", "./icon.svg", "./apple-touch-icon.png"];
 const absolute = (path) => new URL(path, self.registration.scope).href;
 
@@ -13,7 +13,7 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key.startsWith("estoque-padaria-") && key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key.startsWith("estoque-") && key !== CACHE_NAME).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
   );
 });
