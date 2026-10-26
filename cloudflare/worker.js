@@ -370,7 +370,6 @@ async function route(request, env) {
     const enabled = await usersTableExists(env);
     if (!enabled) return json({accountsEnabled:false,setupRequired:false});
     const totalUsers = await countUsers(env);
-    const admins = Number((await env.DB.prepare("SELECT COUNT(*) AS count FROM users WHERE active=1 AND role='admin'").first())?.count || 0);
     return json({accountsEnabled:true,setupRequired:totalUsers===0});
   }
   if (path === "/api/users/bootstrap" && request.method === "POST") {
