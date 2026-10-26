@@ -68,6 +68,8 @@ assert.ok(worker.includes("PASSWORD_HASH_ITERATIONS = 310000"));
 assert.ok(worker.includes("async function passwordHash("));
 assert.ok(worker.includes('path === "/api/auth/status"'));
 assert.ok(worker.includes('path === "/api/users/bootstrap"'));
+assert.ok(worker.includes("setupRequired:totalUsers===0"), "O formulário de bootstrap só deve aparecer antes de existir usuário.");
+assert.ok(worker.includes("if (totalUsers>0) return json({error:\"A configuração inicial só pode ser feita uma vez."), "A senha compartilhada não deve permitir recriar administrador após a configuração inicial.");
 assert.ok(worker.includes('path === "/api/users" && request.method === "POST"'));
 assert.ok(worker.includes("Seu perfil não permite cadastrar produtos."));
 assert.ok(worker.includes("session_version=session_version+?"));
