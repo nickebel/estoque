@@ -62,8 +62,10 @@ try {
   const token = login.token;
   const products = await call("/api/products", { token });
   const movements = await call("/api/movements", { token });
+  const audit = await call("/api/audit?limit=100", { token });
   const backup = await call("/api/backup", { token });
   if (!Array.isArray(products) || !Array.isArray(movements) ||
+      audit.enabled !== true || !Array.isArray(audit.events) ||
       !Array.isArray(backup.products) || !Array.isArray(backup.moves)) {
     throw new Error("A API respondeu, mas um endpoint não retornou a estrutura esperada.");
   }
@@ -73,6 +75,7 @@ try {
   console.log("- Proteção das rotas privadas: OK");
   console.log("- Validação de conteúdo JSON: OK");
   console.log("- Login: OK");
+  console.log("- Auditoria: OK (" + audit.events.length + " eventos recentes)");
   console.log("- Produtos: " + products.length);
   console.log("- Movimentações recentes na tela: " + movements.length);
   console.log("- Backup remoto: OK (" + backup.moves.length + " movimentações incluídas)");
