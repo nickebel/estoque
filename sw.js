@@ -1,5 +1,5 @@
-const CACHE_NAME = "estoque-padaria-v1";
-const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon.svg", "./apple-touch-icon.png"];
+const CACHE_NAME = "estoque-padaria-v2";
+const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./api-config.js", "./icon-192.png", "./icon-512.png", "./icon.svg", "./apple-touch-icon.png"];
 const absolute = (path) => new URL(path, self.registration.scope).href;
 
 self.addEventListener("install", (event) => {
@@ -22,6 +22,18 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const requestUrl = new URL(event.request.url);
   if (requestUrl.origin !== self.location.origin) return;
+
+  if (requestUrl.pathname.endsWith("/api-config.js")) {
+    event.respondWith(
+      fetch(event.request, {cache: "no-store"})
+        .then((response) => {
+          if (response.ok) caches.open(CACHE_NAME).then((cache) => cache.put(event.request, response.clone()));
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
 
   if (event.request.mode === "navigate") {
     event.respondWith(
