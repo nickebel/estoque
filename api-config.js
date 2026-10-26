@@ -1,5 +1,5 @@
-// Endereço do Worker publicado no Cloudflare.
-// O site usa essa API para compartilhar produtos e movimentações entre dispositivos.
+// Endereço da API ficará vazio até a publicação do Worker ser confirmada.
+// Enquanto vazio, o aplicativo permanece no modo local do navegador.
 window.ESTOQUE_CONFIG = {
-  apiBaseUrl: "https://estoque-padaria-api.nas20-e16.workers.dev"
+  apiBaseUrl: ""
 };
