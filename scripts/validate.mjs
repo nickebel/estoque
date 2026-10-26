@@ -87,6 +87,8 @@ assert.ok(appJs.includes('apiRequest("/api/users/"+encodeURIComponent(id)'));
 assert.ok(appJs.includes('sessionStorage.setItem("estoquePadariaApiToken",authToken)'));
 assert.ok(auditMigration.includes("CREATE INDEX IF NOT EXISTS audit_events_date_idx"));
 assert.ok(worker.includes('path === "/api/login"'));
+assert.ok(worker.includes('if (!env.SESSION_SECRET) return json({error:"A configuração da sessão está incompleta."},503);'));
+assert.ok(worker.includes('if (!env.APP_PASSWORD) return json({error:"O login legado está desativado; configure contas individuais."},503);'));
 assert.ok(worker.includes('path === "/api/products"'));
 assert.ok(worker.includes('path === "/api/movements"'));
 assert.ok(worker.includes('path === "/api/backup"'));
