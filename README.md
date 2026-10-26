@@ -117,4 +117,4 @@ Para itens que vêm em caixas ou fardos com embalagens internas, mantenha uma un
 
 ## Dados e privacidade
 
-Quando `api-config.js` aponta para o Worker, produtos e movimentações são armazenados no Cloudflare D1 e compartilhados com os dispositivos autorizados. O token de sessão fica no armazenamento local do navegador e expira após 12 horas. Sem a URL da API, o aplicativo entra em modo local e os dados ficam apenas naquele navegador. Não cadastre dados pessoais desnecessários; exporte backups regularmente e guarde-os em local seguro.
+Quando `api-config.js` aponta para o Worker, produtos e movimentações são armazenados no Cloudflare D1 e compartilhados com os dispositivos autorizados. O token de sessão fica no armazenamento da sessão da aba (sessionStorage) e expira após 12 horas; ele é removido ao encerrar a sessão no aplicativo e não é mantido intencionalmente entre sessões de navegação. Sem a URL da API, o aplicativo entra em modo local e os dados ficam apenas naquele navegador. Não cadastre dados pessoais desnecessários; exporte backups regularmente e guarde-os em local seguro.
