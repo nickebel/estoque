@@ -211,8 +211,23 @@ async function route(request, env) {
     return json({ok:true});
   }
   if (path === "/api/movements" && request.method === "GET") {
-    const result = await env.DB.prepare("SELECT * FROM movements ORDER BY created_at DESC LIMIT 100").all();
+    const limit = url.searchParams.get("all") === "1" ? 5000 : 100;
+    const result = await env.DB.prepare("SELECT * FROM movements ORDER BY created_at DESC LIMIT ?").bind(limit).all();
     return json(result.results.map(mapMovement));
+  }
+  if (path === "/api/backup" && request.method === "GET") {
+    const [productRows, movementRows] = await Promise.all([
+      env.DB.prepare("SELECT * FROM products ORDER BY name COLLATE NOCASE").all(),
+      env.DB.prepare("SELECT * FROM movements ORDER BY created_at DESC LIMIT 5000").all()
+    ]);
+    const moves = movementRows.results.map(mapMovement);
+    return json({
+      products: productRows.results.map(mapProduct),
+      moves,
+      exportedAt: nowIso(),
+      movementLimit: 5000,
+      movementsTruncated: moves.length >= 5000
+    });
   }
   if (path === "/api/movements" && request.method === "POST") {
     const body = await readJson(request);
