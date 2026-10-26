@@ -3,12 +3,13 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 
 const read = (path) => readFile(new URL("../" + path, import.meta.url), "utf8");
-const [html, worker, serviceWorker, schema, manifestText, configText, packageText, apiConfig, appJs, installJs] =
+const [html, worker, serviceWorker, schema, auditMigration, manifestText, configText, packageText, apiConfig, appJs, installJs] =
   await Promise.all([
     read("index.html"),
     read("cloudflare/worker.js"),
     read("sw.js"),
     read("cloudflare/schema.sql"),
+    read("cloudflare/migrations/0002_audit_events.sql"),
     read("manifest.webmanifest"),
     read("wrangler.jsonc"),
     read("package.json"),
@@ -56,10 +57,20 @@ assert.equal(packageInfo.scripts?.["test:smoke"], "node scripts/smoke-test.mjs")
 assert.ok(schema.includes("CREATE TABLE IF NOT EXISTS products"));
 assert.ok(schema.includes("CREATE TABLE IF NOT EXISTS movements"));
 assert.ok(schema.includes("CREATE TABLE IF NOT EXISTS login_attempts"));
+assert.ok(schema.includes("CREATE TABLE IF NOT EXISTS audit_events"));
+assert.ok(auditMigration.includes("CREATE TABLE IF NOT EXISTS audit_events"));
+assert.ok(auditMigration.includes("CREATE INDEX IF NOT EXISTS audit_events_date_idx"));
 assert.ok(worker.includes('path === "/api/login"'));
 assert.ok(worker.includes('path === "/api/products"'));
 assert.ok(worker.includes('path === "/api/movements"'));
 assert.ok(worker.includes('path === "/api/backup"'));
+assert.ok(worker.includes('path === "/api/audit"'));
+assert.ok(worker.includes("async function auditTableExists(env)"));
+assert.ok(worker.includes('action:"stock_adjusted"'));
+assert.ok(worker.includes('action:"product_deleted"'));
+assert.ok(appJs.includes('apiRequest("/api/audit?limit=100")'));
+assert.ok(html.includes('id="audit-panel"'));
+assert.ok(html.includes('id="audit-table"'));
 assert.ok(html.includes('src="./api-config.js"'));
 assert.ok(html.includes('id="login-form"'));
 assert.ok(html.includes('id="sync-now"'));
