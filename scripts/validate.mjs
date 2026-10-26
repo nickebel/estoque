@@ -42,6 +42,7 @@ assert.ok(schema.includes("CREATE TABLE IF NOT EXISTS login_attempts"));
 assert.ok(worker.includes('path === "/api/login"'));
 assert.ok(worker.includes('path === "/api/products"'));
 assert.ok(worker.includes('path === "/api/movements"'));
+assert.ok(worker.includes('path === "/api/backup"'));
 assert.ok(html.includes('src="./api-config.js"'));
 assert.ok(html.includes('id="login-form"'));
 assert.ok(html.includes('id="sync-now"'));
