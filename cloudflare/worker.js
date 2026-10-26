@@ -61,7 +61,7 @@ async function issueToken(secret, user = null) {
   const now = Math.floor(Date.now() / 1000);
   const header = b64url(encoder.encode(JSON.stringify({alg:"HS256",typ:"JWT"})));
   const payloadData = user
-    ? {sub:user.id,username:user.username,displayName:user.displayName,role:user.role,iat:now,exp:now+SESSION_SECONDS}
+    ? {sub:user.id,username:user.username,displayName:user.displayName,role:user.role,sv:Number(user.sessionVersion||1),iat:now,exp:now+SESSION_SECONDS}
     : {sub:"estoque-equipe",username:"equipe",displayName:"Equipe",role:"admin",iat:now,exp:now+SESSION_SECONDS};
   const payload = b64url(encoder.encode(JSON.stringify(payloadData)));
   const body = header + "." + payload;
@@ -135,11 +135,11 @@ async function authenticated(request, env) {
       return {...payload,username:"equipe",displayName:"Equipe",role:"admin",legacy:true};
     }
     if (!tableExists) return null;
-    const user = await env.DB.prepare("SELECT id,username,display_name,role,active FROM users WHERE id=?").bind(payload.sub).first();
-    if (!user || Number(user.active) !== 1) return null;
+    const user = await env.DB.prepare("SELECT id,username,display_name,role,active,session_version FROM users WHERE id=?").bind(payload.sub).first();
+    if (!user || Number(user.active) !== 1 || Number(payload.sv||1)!==Number(user.session_version||1)) return null;
     return {
       sub:user.id,username:user.username,displayName:user.display_name,role:user.role,
-      iat:payload.iat,exp:payload.exp,legacy:false
+      iat:payload.iat,exp:payload.exp,sv:Number(user.session_version||1),legacy:false
     };
   } catch { return null; }
 }
@@ -311,7 +311,7 @@ async function route(request, env) {
     const password = validateUserPassword(body.password);
     const record = await createPasswordRecord(password);
     const timestamp = nowIso();
-    const inserted = await env.DB.prepare("INSERT INTO users (id,username,display_name,password_salt,password_hash,role,active,created_at,updated_at,last_login_at) SELECT ?,?,?,?,?, 'admin',1,?,?,NULL WHERE NOT EXISTS (SELECT 1 FROM users WHERE active=1 AND role='admin')")
+    const inserted = await env.DB.prepare("INSERT INTO users (id,username,display_name,password_salt,password_hash,role,active,session_version,created_at,updated_at,last_login_at) SELECT ?,?,?,?,?, 'admin',1,1,?,?,NULL WHERE NOT EXISTS (SELECT 1 FROM users WHERE active=1 AND role='admin')")
       .bind(crypto.randomUUID(),username,displayName,record.passwordSalt,record.passwordHash,timestamp,timestamp).run();
     if (!inserted.meta.changes) return json({error:"Um administrador já foi configurado. Atualize a página e entre com sua conta."},409);
     return json({ok:true});
@@ -328,7 +328,7 @@ async function route(request, env) {
         return json({error:"Informe seu usuário e sua senha individual."},400);
       }
       const username = usernameValue(body.username);
-      const user = await env.DB.prepare("SELECT id,username,display_name,password_salt,password_hash,role,active FROM users WHERE username=? COLLATE NOCASE").bind(username).first();
+      const user = await env.DB.prepare("SELECT id,username,display_name,password_salt,password_hash,role,active,session_version FROM users WHERE username=? COLLATE NOCASE").bind(username).first();
       let passwordMatches = false;
       if (user && Number(user.active)===1) {
         passwordMatches = await verifyPassword(body.password,user.password_salt,user.password_hash);
@@ -343,7 +343,7 @@ async function route(request, env) {
       const timestamp = nowIso();
       await env.DB.prepare("UPDATE users SET last_login_at=?,updated_at=updated_at WHERE id=?").bind(timestamp,user.id).run();
       return json({
-        token:await issueToken(env.SESSION_SECRET,{id:user.id,username:user.username,displayName:user.display_name,role:user.role}),
+        token:await issueToken(env.SESSION_SECRET,{id:user.id,username:user.username,displayName:user.display_name,role:user.role,sessionVersion:Number(user.session_version||1)}),
         expiresIn:SESSION_SECONDS,
         user:{id:user.id,username:user.username,displayName:user.display_name,role:user.role}
       });
@@ -383,14 +383,15 @@ async function route(request, env) {
     if (!displayName) throw new RequestError("Informe o nome do funcionário.",400);
     const password = validateUserPassword(body.password);
     const roles = ["admin","manager","operator","viewer"];
-    const requestedRole = roles.includes(body.role)?body.role:"operator";
+    if (!roles.includes(body.role)) throw new RequestError("Perfil de acesso inválido.",400);
+    const requestedRole = body.role;
     const existing = await env.DB.prepare("SELECT id FROM users WHERE username=? COLLATE NOCASE").bind(username).first();
     if (existing) return json({error:"Esse nome de usuário já está cadastrado."},409);
     const record = await createPasswordRecord(password);
     const timestamp = nowIso();
     const id=crypto.randomUUID();
     try {
-      await env.DB.prepare("INSERT INTO users (id,username,display_name,password_salt,password_hash,role,active,created_at,updated_at,last_login_at) VALUES (?,?,?,?,?,?,1,?,?,NULL)")
+      await env.DB.prepare("INSERT INTO users (id,username,display_name,password_salt,password_hash,role,active,session_version,created_at,updated_at,last_login_at) VALUES (?,?,?,?,?,?,1,1,?,?,NULL)")
         .bind(id,username,displayName,record.passwordSalt,record.passwordHash,requestedRole,timestamp,timestamp).run();
     } catch {
       return json({error:"Não foi possível criar o usuário. Confira se o nome já está em uso."},409);
@@ -400,6 +401,7 @@ async function route(request, env) {
   const userMatch = path.match(/^\/api\/users\/([^/]+)$/);
   if (userMatch && request.method === "PUT") {
     if (!isAdmin) return json({error:"Somente administradores podem alterar acessos."},403);
+    if (!await usersTableExists(env)) return json({error:"Execute a migração 0003 para ativar usuários individuais."},503);
     const id=decodeURIComponent(userMatch[1]);
     const body=await readJson(request);
     const existing=await env.DB.prepare("SELECT id,username,display_name,role,active FROM users WHERE id=?").bind(id).first();
@@ -409,7 +411,8 @@ async function route(request, env) {
     const roles=["admin","manager","operator","viewer"];
     const nextRole=body.role===undefined?existing.role:body.role;
     if (!roles.includes(nextRole)) throw new RequestError("Perfil de acesso inválido.",400);
-    const active=body.active===undefined?Number(existing.active)===1:Boolean(body.active);
+    if (body.active!==undefined && typeof body.active!=="boolean") throw new RequestError("Status de usuário inválido.",400);
+    const active=body.active===undefined?Number(existing.active)===1:body.active;
     if (id===session.sub && (!active || nextRole!=="admin")) return json({error:"Não é possível desativar ou rebaixar o administrador conectado."},400);
     const losesAdmin=Number(existing.active)===1 && existing.role==="admin" && (!active || nextRole!=="admin");
     if (losesAdmin) {
@@ -419,8 +422,8 @@ async function route(request, env) {
     let record=null;
     if (body.password!==undefined && body.password!=="") record=await createPasswordRecord(validateUserPassword(body.password));
     const timestamp=nowIso();
-    await env.DB.prepare("UPDATE users SET display_name=?,role=?,active=?,password_salt=COALESCE(?,password_salt),password_hash=COALESCE(?,password_hash),updated_at=? WHERE id=?")
-      .bind(displayName,nextRole,active?1:0,record?.passwordSalt||null,record?.passwordHash||null,timestamp,id).run();
+    await env.DB.prepare("UPDATE users SET display_name=?,role=?,active=?,password_salt=COALESCE(?,password_salt),password_hash=COALESCE(?,password_hash),session_version=session_version+?,updated_at=? WHERE id=?")
+      .bind(displayName,nextRole,active?1:0,record?.passwordSalt||null,record?.passwordHash||null,((record||nextRole!==existing.role||active!==(Number(existing.active)===1))?1:0),timestamp,id).run();
     return json({id,username:existing.username,displayName,role:nextRole,active,updatedAt:timestamp});
   }
 
