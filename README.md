@@ -43,7 +43,7 @@ O projeto já inclui uma API para o Cloudflare Workers e um esquema SQL para D1:
 1. Copie o **Database ID** exibido na página D1.
 2. No repositório, abra [`wrangler.jsonc`](./wrangler.jsonc) e substitua `SUBSTITUA_PELO_ID_DO_BANCO_D1` pelo ID real. Salve a alteração.
 3. No Cloudflare, abra **Workers & Pages → Create application**, conecte ao GitHub e selecione `nickebel/estoque`. Use a configuração Wrangler existente para publicar o Worker.
-4. Na página do Worker, abra **Settings → Variables and Secrets** e adicione dois **secrets**:
+4. Confirme que a configuração de build usa a raiz do repositório e que o comando de deploy é `npx wrangler deploy` (o `package.json` já inclui Wrangler). Na página do Worker, abra **Settings → Variables and Secrets** e adicione dois **secrets**:
    - `APP_PASSWORD`: uma senha forte que a equipe usará para entrar no aplicativo.
    - `SESSION_SECRET`: uma chave aleatória longa e diferente, usada para assinar as sessões.
 5. Salve os secrets e publique/reimplante o Worker se o painel pedir.
@@ -63,6 +63,7 @@ O Worker só aceita chamadas do site `https://nickebel.github.io` e dos endereç
 
 - Os dados passam a vir do banco online quando `api-config.js` contém o endereço do Worker. Enquanto ele estiver vazio, o aplicativo continua no modo local de navegador.
 - A versão atual permite entrar com uma senha comum da equipe. O token de sessão expira após 12 horas.
+- A lista de produtos e o histórico são recarregados após alterações, ao retornar à janela e automaticamente a cada 60 segundos enquanto o app está aberto. Também há o botão **Atualizar** e o botão **Sair** no cabeçalho.
 - O backup JSON pode ser exportado; a restauração direta de um backup no banco compartilhado ainda está desativada para evitar substituir os dados de toda a equipe acidentalmente.
 - O plano gratuito tem limites e, ao exceder cotas, a API pode parar temporariamente. Acompanhe o consumo no painel Cloudflare.
 
