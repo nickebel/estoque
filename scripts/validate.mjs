@@ -40,6 +40,8 @@ assert.equal(manifest.theme_color, "#5E3023");
 assert.equal(manifest.background_color, "#F3E9DC");
 assert.ok(manifest.icons.some((icon) => icon.sizes === "192x192"));
 assert.ok(manifest.icons.some((icon) => icon.sizes === "512x512"));
+assert.ok(html.includes('href="./icon.svg?v=capricho-grid-1"'), "A favicon deve usar o símbolo de grade atual.");
+assert.ok(html.includes('href="./icon-192.png?v=capricho-grid-1"'), "Deve existir fallback PNG para o favicon.");
 
 const wrangler = JSON.parse(configText.replace(/^\s*\/\/.*$/gm, ""));
 assert.ok(wrangler.d1_databases?.some((binding) => binding.binding === "DB"));
