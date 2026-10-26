@@ -57,8 +57,12 @@ async function configureLoginMode(){
   $("login-form").classList.toggle("hidden",needsSetup);
   $("bootstrap-admin-form").classList.toggle("hidden",!needsSetup);
   $("login-username-field").classList.toggle("hidden",!accountsStatus.accountsEnabled||needsSetup);
+  $("login-username").required=Boolean(accountsStatus.accountsEnabled&&!needsSetup);
   const passwordLabel=document.querySelector('label[for="login-password"]');
   if(passwordLabel)passwordLabel.textContent=accountsStatus.accountsEnabled?"Senha individual":"Senha de acesso";
+  $("login-description").textContent=accountsStatus.accountsEnabled
+    ?"Entre com seu usuário e sua senha individual para acessar o estoque da Capricho."
+    :"Acesse com a senha da equipe para consultar o estoque compartilhado da Panificação Capricho.";
   if(needsSetup){
     authToken="";
     sessionStorage.removeItem("estoquePadariaApiToken");
