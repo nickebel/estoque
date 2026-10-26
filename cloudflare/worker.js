@@ -3,6 +3,7 @@ const SESSION_SECONDS = 12 * 60 * 60;
 const LOGIN_WINDOW_SECONDS = 15 * 60;
 const LOGIN_MAX_ATTEMPTS = 8;
 const MAX_JSON_BODY_BYTES = 16 * 1024;
+const PASSWORD_HASH_ITERATIONS = 310000;
 const ALLOWED_ORIGINS = new Set([
   "https://nickebel.github.io",
   "http://localhost:5500",
@@ -56,10 +57,13 @@ async function sign(value, secret) {
   const key = await crypto.subtle.importKey("raw", encoder.encode(secret), {name:"HMAC", hash:"SHA-256"}, false, ["sign"]);
   return b64url(new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(value))));
 }
-async function issueToken(secret) {
+async function issueToken(secret, user = null) {
   const now = Math.floor(Date.now() / 1000);
   const header = b64url(encoder.encode(JSON.stringify({alg:"HS256",typ:"JWT"})));
-  const payload = b64url(encoder.encode(JSON.stringify({sub:"estoque-equipe",iat:now,exp:now+SESSION_SECONDS})));
+  const payloadData = user
+    ? {sub:user.id,username:user.username,displayName:user.displayName,role:user.role,iat:now,exp:now+SESSION_SECONDS}
+    : {sub:"estoque-equipe",username:"equipe",displayName:"Equipe",role:"admin",iat:now,exp:now+SESSION_SECONDS};
+  const payload = b64url(encoder.encode(JSON.stringify(payloadData)));
   const body = header + "." + payload;
   return body + "." + await sign(body, secret);
 }
@@ -71,17 +75,73 @@ function constantTimeEqual(a, b) {
   for (let i = 0; i < x.length; i++) diff |= x[i] ^ y[i];
   return diff === 0;
 }
+async function usersTableExists(env) {
+  const row = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='users'").first();
+  return Boolean(row);
+}
+async function countUsers(env) {
+  if (!await usersTableExists(env)) return 0;
+  const row = await env.DB.prepare("SELECT COUNT(*) AS count FROM users").first();
+  return Number(row?.count || 0);
+}
+async function passwordHash(password, salt) {
+  const key = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits(
+    {name:"PBKDF2",salt,iterations:PASSWORD_HASH_ITERATIONS,hash:"SHA-256"},
+    key,256
+  );
+  return b64url(new Uint8Array(bits));
+}
+function decodeUserSalt(value) {
+  return fromB64url(value);
+}
+async function createPasswordRecord(password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  return {passwordSalt:b64url(salt),passwordHash:await passwordHash(password,salt)};
+}
+async function verifyPassword(password, salt, expectedHash) {
+  const actualHash = await passwordHash(password,decodeUserSalt(salt));
+  return constantTimeEqual(actualHash,expectedHash);
+}
+function usernameValue(value) {
+  const username = text(value,40).toLowerCase();
+  if (!/^[a-z0-9._-]{3,40}$/.test(username)) {
+    throw new RequestError("O usuário deve ter de 3 a 40 caracteres: letras sem acento, números, ponto, hífen ou sublinhado.");
+  }
+  return username;
+}
+function validateUserPassword(value) {
+  if (typeof value !== "string" || value.length < 12 || value.length > 128) {
+    throw new RequestError("A senha individual deve ter entre 12 e 128 caracteres.");
+  }
+  return value;
+}
 async function authenticated(request, env) {
   const header = request.headers.get("Authorization") || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : "";
   const parts = token.split(".");
-  if (parts.length !== 3 || !env.SESSION_SECRET) return false;
+  if (parts.length !== 3 || !env.SESSION_SECRET) return null;
   const body = parts[0] + "." + parts[1];
-  if (!constantTimeEqual(await sign(body, env.SESSION_SECRET), parts[2])) return false;
+  if (!constantTimeEqual(await sign(body, env.SESSION_SECRET), parts[2])) return null;
   try {
     const payload = JSON.parse(new TextDecoder().decode(fromB64url(parts[1])));
-    return payload.sub === "estoque-equipe" && Number(payload.exp) > Math.floor(Date.now()/1000);
-  } catch { return false; }
+    if (Number(payload.exp) <= Math.floor(Date.now()/1000)) return null;
+
+    const tableExists = await usersTableExists(env);
+    const userCount = tableExists ? await countUsers(env) : 0;
+    if (payload.sub === "estoque-equipe") {
+      // Legacy shared-password sessions are accepted only before user accounts exist.
+      if (userCount > 0) return null;
+      return {...payload,username:"equipe",displayName:"Equipe",role:"admin",legacy:true};
+    }
+    if (!tableExists) return null;
+    const user = await env.DB.prepare("SELECT id,username,display_name,role,active FROM users WHERE id=?").bind(payload.sub).first();
+    if (!user || Number(user.active) !== 1) return null;
+    return {
+      sub:user.id,username:user.username,displayName:user.display_name,role:user.role,
+      iat:payload.iat,exp:payload.exp,legacy:false
+    };
+  } catch { return null; }
 }
 async function checkLoginRateLimit(request, env, passwordMatches) {
   const ip = request.headers.get("CF-Connecting-IP") || "unknown";
