@@ -3,6 +3,7 @@
 const STORE="estoquePadaria.v1";
 let products=[], moves=[], toastTimer=null, editingOriginalQty=null;
 let auditState={enabled:false,events:[],message:""};
+let currentUser=null, accountsStatus={accountsEnabled:false,setupRequired:false}, usersList=[];
 const API_BASE=String(window.ESTOQUE_CONFIG&&window.ESTOQUE_CONFIG.apiBaseUrl||"").trim().replace(/\/+$/,"");
 const REMOTE_MODE=Boolean(API_BASE);
 localStorage.removeItem("estoquePadariaApiToken");
@@ -39,19 +40,36 @@ async function refreshRemote(){
   const result=await Promise.all([
     apiRequest("/api/products"),
     apiRequest("/api/movements"),
-    apiRequest("/api/audit?limit=100").catch(error=>({enabled:false,events:[],message:"Não foi possível carregar a auditoria: "+error.message}))
+    apiRequest("/api/audit?limit=100").catch(error=>({enabled:false,events:[],message:error.message})),
+    apiRequest("/api/me")
   ]);
   products=Array.isArray(result[0])?result[0]:[];
   moves=Array.isArray(result[1])?result[1]:[];
   auditState=result[2]&&typeof result[2]==="object"?result[2]:{enabled:false,events:[],message:"Resposta de auditoria inválida."};
+  currentUser=result[3]?.user||null;
+  applyRoleUI();
   render();
+}
+async function configureLoginMode(){
+  try{accountsStatus=await apiRequest("/api/auth/status");}
+  catch{accountsStatus={accountsEnabled:false,setupRequired:false};}
+  const needsSetup=Boolean(accountsStatus.accountsEnabled&&accountsStatus.setupRequired);
+  $("login-form").classList.toggle("hidden",needsSetup);
+  $("bootstrap-admin-form").classList.toggle("hidden",!needsSetup);
+  $("login-username-field").classList.toggle("hidden",!accountsStatus.accountsEnabled||needsSetup);
+  const passwordLabel=document.querySelector('label[for="login-password"]');
+  if(passwordLabel)passwordLabel.textContent=accountsStatus.accountsEnabled?"Senha individual":"Senha de acesso";
+  if(needsSetup){
+    authToken="";
+    sessionStorage.removeItem("estoquePadariaApiToken");
+  }
 }
 async function initRemote(){
   if(!REMOTE_MODE){$("storage-status").textContent="Modo local · dispositivo único";$("data-notice").textContent="O modo local mantém os dados apenas neste navegador. Para operar com a equipe, ative a conexão com o banco compartilhado.";return}
   $("backup-restore-card").classList.add("hidden");
   enableRemoteActions();
-  $("storage-status").textContent="Banco online · sincronizado";
-  $("data-notice").textContent="Produtos e movimentações são compartilhados entre os dispositivos autorizados. Exporte backups regularmente e guarde-os em local seguro.";
+  $("storage-status").textContent="Banco online · acesso protegido";
+  $("data-notice").textContent="Produtos e movimentações são compartilhados entre dispositivos autorizados. Exporte backups regularmente e guarde-os em local seguro.";
   try {
     const localCopy=JSON.parse(localStorage.getItem(STORE)||"{}");
     const count=Array.isArray(localCopy.products)?localCopy.products.length:0;
@@ -59,8 +77,9 @@ async function initRemote(){
     if(count>0){warning.textContent="Este aparelho ainda tem "+count+" produto(s) salvos localmente. Eles não serão enviados ao banco automaticamente. Exporte um backup antes de migrar o estoque.";warning.classList.remove("hidden");}
     else warning.classList.add("hidden");
   } catch {}
+  await configureLoginMode();
   $("login-overlay").classList.remove("hidden");
-  if(authToken){
+  if(authToken&&!accountsStatus.setupRequired){
     try{
       await refreshRemote();
       $("login-overlay").classList.add("hidden");
@@ -71,7 +90,9 @@ async function initRemote(){
       $("login-error").textContent=error.message;
     }
   }
-  $("login-password").focus();
+  if(accountsStatus.setupRequired)$("bootstrap-current-password").focus();
+  else if(accountsStatus.accountsEnabled)$("login-username").focus();
+  else $("login-password").focus();
 }
 function enableRemoteActions(){
   if(REMOTE_MODE)$("remote-actions").classList.remove("hidden");
