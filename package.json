@@ -5,7 +5,8 @@
   "description": "Aplicativo de controle de estoque da padaria",
   "scripts": {
     "deploy": "wrangler deploy",
-    "test:smoke": "node scripts/smoke-test.mjs"
+    "test:smoke": "node scripts/smoke-test.mjs",
+    "validate": "node scripts/validate.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
