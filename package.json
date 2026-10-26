@@ -4,9 +4,10 @@
   "private": true,
   "description": "Aplicativo de controle de estoque da padaria",
   "scripts": {
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "test:smoke": "node scripts/smoke-test.mjs"
   },
   "devDependencies": {
-    "wrangler": "^4.102.0"
+    "wrangler": "^4.0.0"
   }
 }
