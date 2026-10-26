@@ -143,7 +143,9 @@ $("login-form").addEventListener("submit",async e=>{
   const submit=$("login-submit"),error=$("login-error");
   submit.disabled=true;submit.textContent="Conectando…";error.textContent="";
   try{
-    const result=await apiRequest("/api/login",{method:"POST",body:{password:$("login-password").value}});
+    const body={password:$("login-password").value};
+    if(accountsStatus.accountsEnabled)body.username=$("login-username").value.trim();
+    const result=await apiRequest("/api/login",{method:"POST",body});
     authToken=result.token;
     sessionStorage.setItem("estoquePadariaApiToken",authToken);
     await refreshRemote();
@@ -153,9 +155,31 @@ $("login-form").addEventListener("submit",async e=>{
     $("toggle-password-label").textContent="Mostrar";
     $("toggle-password").setAttribute("aria-label","Mostrar senha");
     $("toggle-password").setAttribute("aria-pressed","false");
+    $("login-username").value="";
     msg("Conectado ao estoque compartilhado.");
   }catch(err){error.textContent=err.message||"Falha ao entrar. Tente novamente."}
   finally{submit.disabled=false;submit.textContent="Acessar estoque"}
+});
+$("bootstrap-admin-form").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const button=$("bootstrap-submit"),error=$("bootstrap-error");
+  button.disabled=true;button.textContent="Configurando…";error.textContent="";
+  try{
+    const username=$("bootstrap-username").value.trim().toLowerCase();
+    await apiRequest("/api/users/bootstrap",{method:"POST",body:{
+      currentPassword:$("bootstrap-current-password").value,
+      username,
+      displayName:$("bootstrap-display-name").value.trim(),
+      password:$("bootstrap-password").value
+    }});
+    $("bootstrap-current-password").value="";
+    $("bootstrap-password").value="";
+    await configureLoginMode();
+    $("login-username").value=username;
+    $("login-error").textContent="Administrador criado. Entre com o usuário e a nova senha individual.";
+    $("login-password").focus();
+  }catch(err){error.textContent=err.message||"Não foi possível configurar o administrador."}
+  finally{button.disabled=false;button.textContent="Criar administrador"}
 });
 
 function status(p){if(Number(p.qty)<=0)return '<span class="pill zero">Sem estoque</span>';if(Number(p.qty)<=Number(p.min||0))return '<span class="pill low">Estoque baixo</span>';return '<span class="pill">Disponível</span>'}
