@@ -22,6 +22,16 @@ Aplicação web simples para cadastrar produtos, acompanhar saldo e gerar relat�
 
 O arquivo de entrada é `index.html`; não é necessário instalar dependências ou compilar o projeto.
 
+## Instalar no celular como aplicativo
+
+Depois de ativar o GitHub Pages e o site estar disponível por HTTPS:
+
+- **Android (Chrome):** abra o site e toque em **Instalar app** quando o botão aparecer. Também pode abrir o menu ⋮ do navegador e escolher **Instalar app** ou **Adicionar à tela inicial**.
+- **iPhone/iPad (Safari):** abra o site, toque em **Compartilhar** e escolha **Adicionar à Tela de Início**.
+- **Computador:** em navegadores compatíveis, use o ícone de instalação na barra de endereço ou o menu do navegador.
+
+O app tem manifesto, ícones e service worker para permitir instalação e carregar a interface básica quando estiver sem internet, depois da primeira abertura online. A geração de PDF utiliza uma biblioteca externa e pode precisar de conexão.
+
 ## Como usar
 
 1. Acesse a página do app e abra **Produtos**.
