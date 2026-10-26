@@ -1,0 +1,12 @@
+{
+  "name": "estoque-padaria",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Aplicativo de controle de estoque da padaria",
+  "scripts": {
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.102.0"
+  }
+}
