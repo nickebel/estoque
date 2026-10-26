@@ -47,7 +47,7 @@ Se o banco da Capricho já foi criado antes da trilha de auditoria, abra **D1 �
 
 Depois da auditoria, abra **D1 → estoque-padaria → Console** e execute todo o conteúdo de [cloudflare/migrations/0003_user_accounts.sql](./cloudflare/migrations/0003_user_accounts.sql). Essa migração só cria a tabela de usuários e índices; não modifica o estoque. Ao atualizar e abrir o aplicativo, ele mostrará a configuração do primeiro administrador. Confirme com a senha compartilhada `APP_PASSWORD` e escolha um nome de usuário e uma nova senha individual de pelo menos 12 caracteres. Após criar o administrador, o login compartilhado deixa de funcionar normalmente e cada pessoa entra com seu próprio usuário e senha.
 
-Os perfis são: **Administrador** (controle completo), **Gerente** (opera o estoque e consulta auditoria/backup), **Operador** (cadastra e movimenta, sem excluir produtos nem exportar backup) e **Consulta** (somente leitura). A redefinição de senha, a mudança de perfil e a desativação invalidam as sessões anteriores da conta.
+Os perfis são: **Administrador** (controle completo), **Gerente** (opera o estoque e consulta auditoria/backup), **Operador** (cadastra e movimenta, sem excluir produtos nem exportar backup) e **Consulta** (somente leitura). A redefinição de senha, a mudança de perfil e a desativação invalidam as sessões anteriores da conta. Depois de criar e testar o administrador e pelo menos uma conta individual, é possível remover o secret `APP_PASSWORD` do Worker para desativar definitivamente o login compartilhado legado. Nesse caso, a recuperação administrativa terá de ser feita de forma controlada no D1; mantenha `SESSION_SECRET`, pois ele continua sendo necessário para as sessões.
 
 ### Backups automáticos independentes (Cloudflare R2)
 
