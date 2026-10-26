@@ -1,5 +1,5 @@
 const CACHE_NAME = "estoque-padaria-v1";
-const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
+const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon.svg", "./apple-touch-icon.png"];
 const absolute = (path) => new URL(path, self.registration.scope).href;
 
 self.addEventListener("install", (event) => {
