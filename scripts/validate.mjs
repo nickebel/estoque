@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 
 const read = (path) => readFile(new URL("../" + path, import.meta.url), "utf8");
-const [html, worker, serviceWorker, schema, manifestText, configText, packageText, apiConfig] =
+const [html, worker, serviceWorker, schema, manifestText, configText, packageText, apiConfig, appJs, installJs] =
   await Promise.all([
     read("index.html"),
     read("cloudflare/worker.js"),
@@ -12,14 +12,21 @@ const [html, worker, serviceWorker, schema, manifestText, configText, packageTex
     read("manifest.webmanifest"),
     read("wrangler.jsonc"),
     read("package.json"),
-    read("api-config.js")
+    read("api-config.js"),
+    read("app.js"),
+    read("install.js")
   ]);
 
 const inlineScripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)]
   .map((match) => match[1].trim())
   .filter(Boolean);
-assert.ok(inlineScripts.length >= 1, "index.html precisa ter o código principal.");
-inlineScripts.forEach((source, index) => new vm.Script(source, { filename: "index-inline-" + index + ".js" }));
+assert.equal(inlineScripts.length, 0, "index.html não deve conter JavaScript inline.");
+assert.ok(html.includes('<script src="./app.js" defer></script>'));
+assert.ok(html.includes('<script src="./install.js" defer></script>'));
+assert.ok(html.includes("script-src 'self' https://cdn.jsdelivr.net"), "A CSP deve bloquear scripts inline e permitir apenas scripts próprios e jsPDF.");
+assert.ok(!/\bon[a-z]+\s*=/i.test(html), "index.html não deve conter manipuladores de evento inline.");
+new vm.Script(appJs, { filename: "app.js" });
+new vm.Script(installJs, { filename: "install.js" });
 
 new vm.Script(worker.replace("export default {", "globalThis.workerDefault = {"), { filename: "cloudflare/worker.js" });
 new vm.Script(serviceWorker.replace(/\bself\b/g, "globalThis"), { filename: "sw.js" });
@@ -60,6 +67,7 @@ assert.ok(html.includes('id="logout-now"'));
 assert.ok(html.includes("Content-Security-Policy"), "A interface deve aplicar uma política de segurança de conteúdo.");
 assert.ok(html.includes('id="p-adjustment-note"'), "A interface deve pedir motivo ao ajustar saldo.");
 assert.ok(worker.includes("if (quantityChanged && !adjustmentNote)"), "A API deve rejeitar ajustes de saldo sem motivo.");
+assert.ok(serviceWorker.includes('"./app.js"') && serviceWorker.includes('"./install.js"'), "O cache PWA deve incluir os scripts separados.");
 assert.ok(worker.includes('adjustmentNote,"equipe",timestamp'), "O motivo do ajuste deve ser gravado no histórico.");
 
 console.log("Validação concluída.");
