@@ -364,7 +364,21 @@ async function route(request, env) {
   const path = url.pathname.replace(/\/+$/, "") || "/";
   if (request.method === "OPTIONS") return new Response(null, {status:204});
   if (path === "/api/health" && request.method === "GET") {
-    return json({ok:true,service:"estoque-padaria-api"});
+    try {
+      const [usersTable, auditTable, loginTable] = await Promise.all([
+        usersTableExists(env),
+        auditTableExists(env),
+        env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='login_attempts'").first()
+      ]);
+      let sessionVersionColumn = false;
+      if (usersTable) {
+        const columns = await env.DB.prepare("PRAGMA table_info(users)").all();
+        sessionVersionColumn = columns.results.some(column => column.name === "session_version");
+      }
+      return json({ok:true,service:"estoque-padaria-api",database:"connected",schema:{users:usersTable,audit:auditTable,loginAttempts:Boolean(loginTable),sessionVersionColumn}});
+    } catch {
+      return json({ok:false,service:"estoque-padaria-api",database:"unavailable"},503);
+    }
   }
   if (path === "/api/auth/status" && request.method === "GET") {
     const enabled = await usersTableExists(env);
@@ -731,8 +745,18 @@ export default {
       return withCors(await route(request,env),request);
     } catch (error) {
       const status = error instanceof RequestError ? error.status : 500;
-      const message = status === 500 ? "Erro interno do servidor. Confira a configuração da API e do banco." : error.message;
-      return withCors(json({error:message},status),request);
+      const requestId = crypto.randomUUID();
+      console.error(JSON.stringify({event:"estoque_api_error",requestId,path:new URL(request.url).pathname,status,errorName:error?.name || "Error"}));
+      let message = status === 500 ? "Erro interno do servidor. Código: " + requestId : error.message;
+      const diagnostic = String(error?.message || "").toLowerCase();
+      if (status === 500 && diagnostic.includes("no such column") && diagnostic.includes("session_version")) {
+        message = "A tabela de usuários está desatualizada. Execute a migração 0003 atualizada.";
+      } else if (status === 500 && diagnostic.includes("no such table: users")) {
+        message = "A tabela de usuários não existe. Execute a migração 0003 no banco D1.";
+      } else if (status === 500 && diagnostic.includes("no such table: login_attempts")) {
+        message = "A tabela de tentativas de login está ausente. Confira a instalação inicial do banco.";
+      }
+      return withCors(json({error:message,requestId},status),request);
     }
   },
   async scheduled(controller, env) {
