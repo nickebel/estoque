@@ -1,3 +1,4 @@
+// Os segredos de execução são gerenciados em Settings > Bindings no painel Cloudflare.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "estoque-padaria-api",
