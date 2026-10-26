@@ -43,6 +43,12 @@ O projeto já inclui uma API para o Cloudflare Workers e um esquema SQL para D1:
 
 Se o banco da Capricho já foi criado antes da trilha de auditoria, abra **D1 → estoque-padaria → Console** e execute o conteúdo completo de [cloudflare/migrations/0002_audit_events.sql](./cloudflare/migrations/0002_audit_events.sql). Essa migração apenas cria a tabela e os índices de auditoria; não apaga nem altera produtos ou movimentações existentes. Até ela ser aplicada, o estoque continua operando e a tela de auditoria informa que falta ativar esse recurso.
 
+### Ativar contas individuais e permissões (recomendado)
+
+Depois da auditoria, abra **D1 → estoque-padaria → Console** e execute todo o conteúdo de [cloudflare/migrations/0003_user_accounts.sql](./cloudflare/migrations/0003_user_accounts.sql). Essa migração só cria a tabela de usuários e índices; não modifica o estoque. Ao atualizar e abrir o aplicativo, ele mostrará a configuração do primeiro administrador. Confirme com a senha compartilhada `APP_PASSWORD` e escolha um nome de usuário e uma nova senha individual de pelo menos 12 caracteres. Após criar o administrador, o login compartilhado deixa de funcionar normalmente e cada pessoa entra com seu próprio usuário e senha.
+
+Os perfis são: **Administrador** (controle completo), **Gerente** (opera o estoque e consulta auditoria/backup), **Operador** (cadastra e movimenta, sem excluir produtos nem exportar backup) e **Consulta** (somente leitura). A redefinição de senha, a mudança de perfil e a desativação invalidam as sessões anteriores da conta.
+
 ### 2. Configurar o Worker
 
 1. O banco D1 `estoque-padaria` já está criado e suas tabelas já foram aplicadas.
@@ -73,6 +79,8 @@ Depois de configurar D1, o Worker e a URL em `api-config.js`, também é possív
 $env:API_BASE_URL = "https://SEU-WORKER.workers.dev"
 $secure = Read-Host "Senha da equipe" -AsSecureString
 $env:APP_PASSWORD = [System.Net.NetworkCredential]::new("", $secure).Password
+# Necessário apenas após ativar contas individuais:
+# $env:APP_USERNAME = "usuario.teste"
 npm run test:smoke
 Remove-Item Env:APP_PASSWORD
 ```
