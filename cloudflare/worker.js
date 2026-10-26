@@ -2,6 +2,7 @@
 const SESSION_SECONDS = 12 * 60 * 60;
 const LOGIN_WINDOW_SECONDS = 15 * 60;
 const LOGIN_MAX_ATTEMPTS = 8;
+const MAX_JSON_BODY_BYTES = 16 * 1024;
 const ALLOWED_ORIGINS = new Set([
   "https://nickebel.github.io",
   "http://localhost:5500",
@@ -27,7 +28,10 @@ function withCors(response, request) {
   for (const [key, value] of Object.entries(corsHeaders(request))) headers.set(key, value);
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("X-Frame-Options", "DENY");
+  headers.set("X-Permitted-Cross-Domain-Policies", "none");
   headers.set("Referrer-Policy", "no-referrer");
+  headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   headers.set("Cache-Control", "no-store");
   return new Response(response.body, {status: response.status, statusText: response.statusText, headers});
 }
@@ -111,10 +115,60 @@ class RequestError extends Error {
   constructor(message, status = 400) { super(message); this.name = "RequestError"; this.status = status; }
 }
 async function readJson(request) {
-  try { return await request.json(); }
-  catch { throw new RequestError("Envie um JSON válido."); }
+  const contentType = (request.headers.get("Content-Type") || "").split(";")[0].trim().toLowerCase();
+  if (contentType !== "application/json") {
+    throw new RequestError("O tipo de conteúdo deve ser application/json.", 415);
+  }
+
+  const contentLength = Number(request.headers.get("Content-Length") || 0);
+  if (Number.isFinite(contentLength) && contentLength > MAX_JSON_BODY_BYTES) {
+    throw new RequestError("A requisição excede o limite permitido de 16 KB.", 413);
+  }
+
+  const reader = request.body?.getReader();
+  if (!reader) throw new RequestError("Envie um JSON válido.");
+  const chunks = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_JSON_BODY_BYTES) {
+        await reader.cancel();
+        throw new RequestError("A requisição excede o limite permitido de 16 KB.", 413);
+      }
+      chunks.push(value);
+    }
+  } catch (error) {
+    if (error instanceof RequestError) throw error;
+    throw new RequestError("Não foi possível ler o corpo da requisição.");
+  }
+
+  const body = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(new TextDecoder("utf-8", {fatal:true}).decode(body));
+  } catch {
+    throw new RequestError("Envie um JSON válido.");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new RequestError("O corpo da requisição deve ser um objeto JSON.");
+  }
+  return parsed;
 }
-function text(value, max = 180) { return String(value ?? "").trim().slice(0, max); }
+function text(value, max = 180) {
+  if (value === undefined || value === null) return "";
+  if (typeof value !== "string") throw new RequestError("Um campo de texto tem formato inválido.");
+  return value.trim().slice(0, max);
+}
 function amount(value, label = "Quantidade", allowZero = false) {
   const n = Number(value);
   if (!Number.isFinite(n) || (allowZero ? n < 0 : n <= 0) || n > 1000000000) {
@@ -148,7 +202,10 @@ async function route(request, env) {
   if (path === "/api/login" && request.method === "POST") {
     if (!env.APP_PASSWORD || !env.SESSION_SECRET) return json({error:"Faltam configurar os segredos APP_PASSWORD e SESSION_SECRET no Cloudflare."},503);
     const body = await readJson(request);
-    const rate = await checkLoginRateLimit(request, env, constantTimeEqual(body.password || "", env.APP_PASSWORD));
+    if (typeof body.password !== "string" || body.password.length === 0) {
+      throw new RequestError("Informe a senha de acesso.", 400);
+    }
+    const rate = await checkLoginRateLimit(request, env, constantTimeEqual(body.password, env.APP_PASSWORD));
     if (!rate.allowed) {
       const headers = rate.retryAfter ? {"Retry-After":String(rate.retryAfter)} : {};
       return new Response(JSON.stringify({error:rate.locked ? "Muitas tentativas. Aguarde 15 minutos antes de tentar novamente." : "Senha incorreta."}), {
