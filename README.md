@@ -49,6 +49,26 @@ Depois da auditoria, abra **D1 → estoque-padaria → Console** e execute todo 
 
 Os perfis são: **Administrador** (controle completo), **Gerente** (opera o estoque e consulta auditoria/backup), **Operador** (cadastra e movimenta, sem excluir produtos nem exportar backup) e **Consulta** (somente leitura). A redefinição de senha, a mudança de perfil e a desativação invalidam as sessões anteriores da conta.
 
+### Backups automáticos independentes (Cloudflare R2)
+
+O código do Worker já contém um handler de backup diário com retenção de 30 dias, mas **ele ainda não está ativado**: primeiro é necessário criar o bucket e conectar a binding R2. Não configure o agendamento antes de criar a binding, para evitar execuções sem destino.
+
+1. No Cloudflare Dashboard, abra **R2 Object Storage** e crie um bucket chamado `estoque-padaria-backups`. Mantenha o bucket privado; não habilite acesso público.
+2. Depois que o bucket existir, acrescente ao objeto principal de `wrangler.jsonc` estas duas configurações (não crie uma segunda chave `r2_buckets` ou `triggers` se já houver uma):
+   
+   ```jsonc
+   "r2_buckets": [
+     { "binding": "BACKUPS", "bucket_name": "estoque-padaria-backups" }
+   ],
+   "triggers": {
+     "crons": ["0 6 * * *"]
+   }
+   ```
+3. Salve e publique o Worker. O cron roda às 06:00 UTC, ou 03:00 no horário de Alagoas/Brasília. Cada execução grava um JSON com produtos, movimentações e auditoria. Backups antigos são removidos após 30 dias quando uma execução diária é concluída.
+4. Acompanhe o primeiro evento em **Workers & Pages → estoque-padaria-api → Settings → Triggers → Cron Triggers** e nos logs do Worker.
+
+O bucket deve permanecer privado e não deve ter domínio público conectado. O código não copia hashes de senha nem a tabela de usuários para os snapshots. A restauração automática ainda não está implementada: os backups são uma cópia independente para recuperação controlada, e qualquer restauração no banco de produção deve ser testada com cuidado antes de executar.
+
 ### 2. Configurar o Worker
 
 1. O banco D1 `estoque-padaria` já está criado e suas tabelas já foram aplicadas.
@@ -59,13 +79,13 @@ Os perfis são: **Administrador** (controle completo), **Gerente** (opera o esto
    - `SESSION_SECRET`: uma chave aleatória longa e diferente, usada para assinar as sessões.
 5. Salve os secrets e publique/reimplante o Worker se o painel pedir.
 
-Não coloque esses dois valores em arquivos do GitHub nem os envie pelo chat. Esta versão usa **uma senha compartilhada pela equipe**, com bloqueio temporário após 8 tentativas incorretas em 15 minutos. Não há identificação individual de cada funcionário no histórico; isso pode ser adicionado em uma etapa futura.
+Não coloque esses dois valores em arquivos do GitHub nem os envie pelo chat. Até executar a migração 0003, o sistema mantém o login legado com senha compartilhada. Depois de criar a tabela de usuários, a configuração inicial exige criar um administrador e o login passa a exigir usuário e senha individual. As tentativas incorretas continuam sujeitas a bloqueio temporário após 8 falhas por IP em 15 minutos.
 
 ### 3. Ligar o site à API
 
 1. O endereço do Worker já está configurado em [`api-config.js`](./api-config.js): `https://estoque-padaria-api.nas20-e16.workers.dev`.
 2. A interface está publicada pelo GitHub Pages, e a API pelo Cloudflare Workers.
-3. Entre com a senha definida no secret `APP_PASSWORD`. Para confirmar a sincronização, cadastre um produto de teste e confira-o em outro aparelho autorizado.
+3. Antes de ativar a migração 0003, entre com a senha definida em `APP_PASSWORD`. Depois de ativar contas individuais, use `APP_PASSWORD` somente uma vez no formulário de configuração do primeiro administrador; em seguida, entre com usuário e senha individual. Para confirmar a sincronização, crie um produto temporário e confira-o em outro aparelho autorizado.
 
 O Worker só aceita chamadas do site `https://nickebel.github.io` e dos endereços locais de desenvolvimento listados em `cloudflare/worker.js`. Se usar um domínio personalizado depois, será necessário adicionar a origem permitida.
 
@@ -90,7 +110,7 @@ Troque `https://SEU-WORKER.workers.dev` pelo endereço real do Worker. O teste v
 ### Avisos
 
 - Os dados passam a vir do banco online quando `api-config.js` contém o endereço do Worker. Enquanto ele estiver vazio, o aplicativo continua no modo local de navegador.
-- A versão atual permite entrar com uma senha comum da equipe. O token de sessão expira após 12 horas.
+- A autenticação legada usa uma senha comum até a migração 0003. Após ativar contas individuais, os tokens expiram após 12 horas e são invalidados quando a conta é desativada, a senha é redefinida ou o perfil muda. O token do navegador fica no armazenamento da sessão da aba, não no armazenamento persistente.
 - A lista de produtos e o histórico são recarregados após alterações, ao retornar à janela e automaticamente a cada 60 segundos enquanto o app está aberto. Também há o botão **Atualizar** e o botão **Sair** no cabeçalho.
 - O backup JSON no modo online consulta o banco e inclui todos os produtos, até as 5.000 movimentações mais recentes e até 10.000 eventos de auditoria. Se os limites forem atingidos, o arquivo indica truncamento. Faça cópias periódicas em local seguro. O PDF do histórico também pode incluir até 5.000 movimentações; a tela de histórico mostra as 100 mais recentes. Se houver mais de 5.000 registros, faça backups periódicos e mantenha cópias arquivadas. A restauração direta de backup no banco compartilhado ainda está desativada para evitar substituir os dados de toda a equipe acidentalmente.
 - O plano gratuito tem limites e, ao exceder cotas, a API pode parar temporariamente. Acompanhe o consumo no painel Cloudflare.
@@ -121,7 +141,7 @@ Para itens que vêm em caixas ou fardos com embalagens internas, mantenha uma un
 - Faça backups regularmente em **Relatórios e backup**.
 - O gerador de PDF usa jsPDF por CDN, então precisa de conexão com a internet. Se a biblioteca não carregar, tente novamente com internet.
 - O botão de compartilhar usa o menu de compartilhamento do próprio dispositivo quando disponível. Caso contrário, baixa o PDF para você anexá-lo manualmente no WhatsApp ou em outro aplicativo.
-- O acesso online usa inicialmente uma senha compartilhada pela equipe. Por isso, os eventos de auditoria identificam o responsável como equipe, não cada funcionário individualmente. Usuários e permissões individuais continuam sendo uma melhoria futura. Guarde a senha e os secrets do Worker com cuidado; não os publique no repositório.
+- Antes da migração 0003, os eventos usam o responsável genérico `equipe`. Depois da ativação de contas individuais, novas operações são associadas ao nome de usuário. A tabela de usuários não é incluída nos backups do R2; se for necessário restaurar a base em outro banco, os acessos devem ser recriados. Guarde a senha inicial e os secrets do Worker com cuidado; nunca os publique no repositório.
 
 ## Dados e privacidade
 
