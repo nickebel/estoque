@@ -32,7 +32,8 @@ assert.ok(manifest.icons.some((icon) => icon.sizes === "512x512"));
 
 const wrangler = JSON.parse(configText.replace(/^\s*\/\/.*$/gm, ""));
 assert.ok(wrangler.d1_databases?.some((binding) => binding.binding === "DB"));
-assert.deepEqual(wrangler.secrets?.required, ["APP_PASSWORD", "SESSION_SECRET"]);
+assert.equal(wrangler.secrets, undefined, "Os segredos são gerenciados no painel do Cloudflare.");
+assert.ok(worker.includes("!env.APP_PASSWORD || !env.SESSION_SECRET"), "A API deve recusar login se os segredos não estiverem configurados.");
 
 const packageInfo = JSON.parse(packageText);
 assert.equal(packageInfo.scripts?.["test:smoke"], "node scripts/smoke-test.mjs");
