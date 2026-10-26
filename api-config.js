@@ -1,5 +1,5 @@
-// Endereço da API ficará vazio até a publicação do Worker ser confirmada.
-// Enquanto vazio, o aplicativo permanece no modo local do navegador.
+// Endereço do Worker publicado no Cloudflare.
+// Produtos e movimentações serão compartilhados pelo banco D1 quando o login funcionar.
 window.ESTOQUE_CONFIG = {
-  apiBaseUrl: ""
+  apiBaseUrl: "https://estoque-padaria-api.nas20-e16.workers.dev"
 };
