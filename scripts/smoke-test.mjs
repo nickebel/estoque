@@ -66,7 +66,8 @@ try {
   const backup = await call("/api/backup", { token });
   if (!Array.isArray(products) || !Array.isArray(movements) ||
       audit.enabled !== true || !Array.isArray(audit.events) ||
-      !Array.isArray(backup.products) || !Array.isArray(backup.moves)) {
+      !Array.isArray(backup.products) || !Array.isArray(backup.moves) ||
+      backup.auditEnabled !== true || !Array.isArray(backup.auditEvents)) {
     throw new Error("A API respondeu, mas um endpoint não retornou a estrutura esperada.");
   }
 
@@ -78,7 +79,7 @@ try {
   console.log("- Auditoria: OK (" + audit.events.length + " eventos recentes)");
   console.log("- Produtos: " + products.length);
   console.log("- Movimentações recentes na tela: " + movements.length);
-  console.log("- Backup remoto: OK (" + backup.moves.length + " movimentações incluídas)");
+  console.log("- Backup remoto: OK (" + backup.moves.length + " movimentações e " + backup.auditEvents.length + " eventos de auditoria incluídos)");
 } catch (error) {
   console.error("Falha no teste:", error instanceof Error ? error.message : error);
   process.exitCode = 1;
