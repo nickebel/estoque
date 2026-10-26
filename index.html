@@ -64,6 +64,12 @@
 <div class="field wide"><label for="m-note">Observação (opcional)</label><input id="m-note" maxlength="180" placeholder="Ex.: compra do fornecedor, uso na produção"></div>
 </div><div class="actions"><button class="btn primary" type="submit">Registrar movimentação</button></div></form></section>
 <section class="panel"><div class="panel-head"><div><h2>Histórico</h2><p>Mostra até 100 recentes; PDF e backup incluem até 5.000 movimentações.</p></div><button class="btn small" id="download-movements">Gerar PDF do histórico</button></div><div class="table-wrap"><table><thead><tr><th>Data e hora</th><th>Produto</th><th>Movimento</th><th>Quantidade</th><th>Saldo após</th><th>Observação</th></tr></thead><tbody id="movements-table"></tbody></table></div><div id="movements-empty" class="empty"><b>Nenhuma movimentação ainda</b>Quando registrar entradas e saídas, elas aparecerão aqui.</div></section>
+<section class="panel" id="audit-panel">
+<div class="panel-head"><div><h2>Auditoria de operações</h2><p>Registro de cadastros, alterações, exclusões e ajustes de saldo.</p></div><button class="btn small" id="refresh-audit" type="button">Atualizar auditoria</button></div>
+<div id="audit-unavailable" class="notice hidden"></div>
+<div class="table-wrap hidden" id="audit-table-wrap"><table><thead><tr><th>Data e hora</th><th>Ação</th><th>Produto</th><th>Responsável</th><th>Detalhes</th></tr></thead><tbody id="audit-table"></tbody></table></div>
+<div id="audit-empty" class="empty hidden"><b>Nenhuma operação registrada</b>As operações do sistema aparecerão aqui quando forem realizadas.</div>
+</section>
 </section>
 <section class="view" id="view-relatorios">
 <div class="heading"><div><p class="eyebrow">RELATÓRIOS E SEGURANÇA</p><h1>Relatórios e backup</h1><p class="desc">Exporte documentos de consulta e mantenha cópias de segurança atualizadas.</p></div></div>
