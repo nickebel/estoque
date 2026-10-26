@@ -167,7 +167,7 @@ async function route(request, env) {
     return json({ok:true});
   }
   if (path === "/api/movements" && request.method === "GET") {
-    const result = await env.DB.prepare("SELECT * FROM movements ORDER BY created_at DESC LIMIT 1000").all();
+    const result = await env.DB.prepare("SELECT * FROM movements ORDER BY created_at DESC LIMIT 100").all();
     return json(result.results.map(mapMovement));
   }
   if (path === "/api/movements" && request.method === "POST") {
