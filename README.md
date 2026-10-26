@@ -48,7 +48,7 @@ O projeto já inclui uma API para o Cloudflare Workers e um esquema SQL para D1:
    - `SESSION_SECRET`: uma chave aleatória longa e diferente, usada para assinar as sessões.
 5. Salve os secrets e publique/reimplante o Worker se o painel pedir.
 
-Não coloque esses dois valores em arquivos do GitHub nem os envie pelo chat. Esta primeira versão usa **uma senha compartilhada pela equipe**; contas individuais de funcionários podem ser adicionadas em uma próxima etapa.
+Não coloque esses dois valores em arquivos do GitHub nem os envie pelo chat. Esta versão usa **uma senha compartilhada pela equipe**, com bloqueio temporário após 8 tentativas incorretas em 15 minutos. Não há identificação individual de cada funcionário no histórico; isso pode ser adicionado em uma etapa futura.
 
 ### 3. Ligar o site à API
 
