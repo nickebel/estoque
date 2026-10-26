@@ -22,6 +22,26 @@ Aplicação web simples para cadastrar produtos, acompanhar saldo e gerar relat�
 
 O arquivo de entrada é `index.html`; não é necessário instalar dependências ou compilar o projeto.
 
+## Preparar o banco compartilhado (Supabase)
+
+O script inicial do banco está em [`supabase/schema.sql`](./supabase/schema.sql). Ele cria produtos, membros da equipe e histórico de movimentações, com políticas RLS e uma função transacional para atualizar o saldo junto com o histórico.
+
+1. Crie um projeto no [Supabase](https://supabase.com/dashboard) e guarde a senha do banco em um lugar seguro.
+2. No projeto, abra **SQL Editor → New query**.
+3. Abra o arquivo [`supabase/schema.sql`](./supabase/schema.sql), copie todo o SQL para o editor do Supabase e execute.
+4. Em **Authentication → Users**, crie ou convide a conta do primeiro responsável.
+5. Na lista de usuários, copie o UUID desse usuário. No SQL Editor, registre essa pessoa como administradora, substituindo `UUID-DO-USUARIO` pelo UUID real:
+
+   ```sql
+   insert into public.team_members (user_id, role)
+   values ('UUID-DO-USUARIO', 'admin');
+   ```
+
+6. Crie as contas dos demais funcionários em Authentication → Users e adicione cada UUID à tabela `public.team_members` com o papel `staff`.
+7. No painel **Connect** do Supabase, copie o **Project URL** e a **publishable key** (ou a chave legada `anon`, se for a exibida pelo projeto). Essas informações públicas são usadas para identificar o projeto; as políticas RLS protegem os dados. **Nunca coloque a secret key ou service_role key no site nem envie essas chaves secretas no chat.**
+
+**Importante:** este script prepara as tabelas e a proteção no banco, mas o app ainda precisa receber o formulário de login e trocar a leitura/gravação local pela API do Supabase antes de usar esses dados compartilhados. Até essa integração ser concluída, o app atual continua salvando no navegador.
+
 ## Instalar no celular como aplicativo
 
 Depois de ativar o GitHub Pages e o site estar disponível por HTTPS:
