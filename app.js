@@ -108,6 +108,14 @@ document.addEventListener("visibilitychange",()=>{
 window.setInterval(()=>{
   if(REMOTE_MODE&&authToken&&!document.hidden)refreshRemote().catch(()=>{});
 },60000);
+$("toggle-password").addEventListener("click",()=>{
+  const input=$("login-password");
+  const show=input.type==="password";
+  input.type=show?"text":"password";
+  $("toggle-password-label").textContent=show?"Ocultar":"Mostrar";
+  $("toggle-password").setAttribute("aria-label",show?"Ocultar senha":"Mostrar senha");
+  $("toggle-password").setAttribute("aria-pressed",String(show));
+});
 $("login-form").addEventListener("submit",async e=>{
   e.preventDefault();
   const submit=$("login-submit"),error=$("login-error");
@@ -119,6 +127,10 @@ $("login-form").addEventListener("submit",async e=>{
     await refreshRemote();
     $("login-overlay").classList.add("hidden");
     $("login-password").value="";
+    $("login-password").type="password";
+    $("toggle-password-label").textContent="Mostrar";
+    $("toggle-password").setAttribute("aria-label","Mostrar senha");
+    $("toggle-password").setAttribute("aria-pressed","false");
     msg("Conectado ao estoque compartilhado.");
   }catch(err){error.textContent=err.message||"Falha ao entrar. Tente novamente."}
   finally{submit.disabled=false;submit.textContent="Acessar estoque"}
