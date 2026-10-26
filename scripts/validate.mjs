@@ -3,13 +3,14 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 
 const read = (path) => readFile(new URL("../" + path, import.meta.url), "utf8");
-const [html, worker, serviceWorker, schema, auditMigration, manifestText, configText, packageText, apiConfig, appJs, installJs] =
+const [html, worker, serviceWorker, schema, auditMigration, userMigration, manifestText, configText, packageText, apiConfig, appJs, installJs] =
   await Promise.all([
     read("index.html"),
     read("cloudflare/worker.js"),
     read("sw.js"),
     read("cloudflare/schema.sql"),
     read("cloudflare/migrations/0002_audit_events.sql"),
+    read("cloudflare/migrations/0003_user_accounts.sql"),
     read("manifest.webmanifest"),
     read("wrangler.jsonc"),
     read("package.json"),
@@ -61,6 +62,22 @@ assert.ok(schema.includes("CREATE TABLE IF NOT EXISTS movements"));
 assert.ok(schema.includes("CREATE TABLE IF NOT EXISTS login_attempts"));
 assert.ok(schema.includes("CREATE TABLE IF NOT EXISTS audit_events"));
 assert.ok(auditMigration.includes("CREATE TABLE IF NOT EXISTS audit_events"));
+assert.ok(userMigration.includes("CREATE TABLE IF NOT EXISTS users"));
+assert.ok(userMigration.includes("session_version"));
+assert.ok(worker.includes("PASSWORD_HASH_ITERATIONS = 310000"));
+assert.ok(worker.includes("async function passwordHash("));
+assert.ok(worker.includes('path === "/api/auth/status"'));
+assert.ok(worker.includes('path === "/api/users/bootstrap"'));
+assert.ok(worker.includes('path === "/api/users" && request.method === "POST"'));
+assert.ok(worker.includes("Seu perfil não permite cadastrar produtos."));
+assert.ok(worker.includes("session_version=session_version+?"));
+assert.ok(html.includes('id="bootstrap-admin-form"'));
+assert.ok(html.includes('id="user-create-form"'));
+assert.ok(html.includes('id="users-table"'));
+assert.ok(appJs.includes('apiRequest("/api/users/bootstrap"'));
+assert.ok(appJs.includes('apiRequest("/api/me")'));
+assert.ok(appJs.includes('apiRequest("/api/users/"+encodeURIComponent(id)'));
+assert.ok(appJs.includes('sessionStorage.setItem("estoquePadariaApiToken",authToken)'));
 assert.ok(auditMigration.includes("CREATE INDEX IF NOT EXISTS audit_events_date_idx"));
 assert.ok(worker.includes('path === "/api/login"'));
 assert.ok(worker.includes('path === "/api/products"'));
