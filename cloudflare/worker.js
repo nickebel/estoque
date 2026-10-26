@@ -188,7 +188,7 @@ async function route(request, env) {
     const update = type === "entrada"
       ? env.DB.prepare(updateSql).bind(quantity,timestamp,productId,oldQty)
       : env.DB.prepare(updateSql).bind(quantity,timestamp,productId,oldQty,quantity);
-    const insert = env.DB.prepare("INSERT INTO movements (id,product_id,product_name,unit,movement_type,quantity,balance_after,note,created_by,created_at) SELECT ?,id,name,?,?,?, ?,?,'equipe',? FROM products WHERE id=? AND quantity=? AND changes()=1")
+    const insert = env.DB.prepare("INSERT INTO movements (id,product_id,product_name,unit,movement_type,quantity,balance_after,note,created_by,created_at) SELECT ?,id,name,unit,?,?,?,?,'equipe',? FROM products WHERE id=? AND quantity=? AND changes()=1")
       .bind(movementId,type,quantity,nextQty,text(body.note),timestamp,productId,nextQty);
     const results = await env.DB.batch([update,insert]);
     if (!results[0].meta.changes) return json({error:"O estoque foi alterado em outro aparelho. Atualize e tente novamente."},409);
