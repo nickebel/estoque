@@ -371,7 +371,7 @@ async function route(request, env) {
     if (!enabled) return json({accountsEnabled:false,setupRequired:false});
     const totalUsers = await countUsers(env);
     const admins = Number((await env.DB.prepare("SELECT COUNT(*) AS count FROM users WHERE active=1 AND role='admin'").first())?.count || 0);
-    return json({accountsEnabled:true,setupRequired:totalUsers===0||admins===0});
+    return json({accountsEnabled:true,setupRequired:totalUsers===0});
   }
   if (path === "/api/users/bootstrap" && request.method === "POST") {
     if (!env.APP_PASSWORD || !env.SESSION_SECRET) return json({error:"A configuração do acesso administrativo está incompleta."},503);
@@ -392,7 +392,7 @@ async function route(request, env) {
     }
     const totalUsers = await countUsers(env);
     const activeAdmins = Number((await env.DB.prepare("SELECT COUNT(*) AS count FROM users WHERE active=1 AND role='admin'").first())?.count || 0);
-    if (totalUsers>0 && activeAdmins>0) return json({error:"A configuração inicial já foi concluída."},409);
+    if (totalUsers>0) return json({error:"A configuração inicial só pode ser feita uma vez. Se não houver administrador ativo, restaure o acesso pelo Console D1."},409);
     const username = usernameValue(body.username);
     const displayName = text(body.displayName,80);
     if (!displayName) throw new RequestError("Informe o nome do administrador.",400);
