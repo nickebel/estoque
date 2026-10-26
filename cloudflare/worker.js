@@ -746,7 +746,7 @@ export default {
     } catch (error) {
       const status = error instanceof RequestError ? error.status : 500;
       const requestId = crypto.randomUUID();
-      console.error(JSON.stringify({event:"estoque_api_error",requestId,path:new URL(request.url).pathname,status,errorName:error?.name || "Error"}));
+      console.error(JSON.stringify({event:"estoque_api_error",requestId,path:new URL(request.url).pathname,status,errorName:error?.name || "Error",errorMessage:status===500?String(error?.message || "Unknown error").slice(0,300):undefined}));
       let message = status === 500 ? "Erro interno do servidor. Código: " + requestId : error.message;
       const diagnostic = String(error?.message || "").toLowerCase();
       if (status === 500 && diagnostic.includes("no such column") && diagnostic.includes("session_version")) {
