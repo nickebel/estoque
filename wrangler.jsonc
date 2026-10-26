@@ -9,5 +9,11 @@
       "database_name": "estoque-padaria",
       "database_id": "SUBSTITUA_PELO_ID_DO_BANCO_D1"
     }
-  ]
+  ],
+  "secrets": {
+    "required": [
+      "APP_PASSWORD",
+      "SESSION_SECRET"
+    ]
+  }
 }
