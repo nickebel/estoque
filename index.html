@@ -258,8 +258,23 @@ function slug(s){return norm(s).replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")|
 function makePDF(title,rows,filename,share){if(!window.jspdf||!window.jspdf.jsPDF){msg("O gerador de PDF precisa de conexão com a internet. Use Imprimir > Salvar como PDF como alternativa.");return}const doc=new window.jspdf.jsPDF({unit:"mm",format:"a4"});const navy=[40,43,74];doc.setFont("helvetica","bold");doc.setFontSize(17);doc.setTextColor(...navy);doc.text("Estoque da Padaria",14,18);doc.setFontSize(12);doc.setTextColor(80,84,105);doc.text(title,14,26);doc.setFont("helvetica","normal");doc.setFontSize(9);doc.text("Gerado em "+new Date().toLocaleString("pt-BR"),14,32);let y=40;const keys=rows.length?Object.keys(rows[0]):[];if(!rows.length){doc.text("Nenhum produto cadastrado.",14,y)}else{const usable=180;const colW=usable/Math.max(keys.length,1);doc.setFillColor(238,235,218);doc.rect(14,y-5,usable,8,"F");doc.setTextColor(...navy);doc.setFont("helvetica","bold");doc.setFontSize(8);keys.forEach((k,i)=>doc.text(doc.splitTextToSize(k,colW-2)[0],14+i*colW,y));y+=8;doc.setFont("helvetica","normal");doc.setTextColor(45,47,65);rows.forEach((row,ri)=>{const vals=keys.map(k=>String(row[k]??"—"));const lines=vals.map((v,i)=>doc.splitTextToSize(v,colW-3));const height=Math.max(6,...lines.map(l=>l.length*4))+2;if(y+height>276){doc.addPage();y=18}if(ri%2===0){doc.setFillColor(248,248,251);doc.rect(14,y-4,usable,height,"F")}lines.forEach((ls,i)=>doc.text(ls,14+i*colW,y));y+=height})}const pages=doc.getNumberOfPages();for(let i=1;i<=pages;i++){doc.setPage(i);doc.setFontSize(8);doc.setTextColor(130,130,145);doc.text("Página "+i+" de "+pages,196,288,{align:"right"})}if(share){const blob=doc.output("blob"),file=new File([blob],filename,{type:"application/pdf"});if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){navigator.share({files:[file],title:title,text:"Relatório de estoque da padaria"}).catch(err=>{if(err.name!=="AbortError"){doc.save(filename);msg("PDF baixado para compartilhar.")}})}else{doc.save(filename);msg("PDF baixado. Anexe-o no aplicativo desejado.")}}else{doc.save(filename);msg("PDF gerado com sucesso.")}}
 $("download-stock-pdf").addEventListener("click",()=>makePDF("Relatório completo do estoque",products.slice().sort((a,b)=>a.name.localeCompare(b.name,"pt-BR")).map(p=>({Produto:p.name,Categoria:p.category||"—",Quantidade:qty(p),"Limite mínimo":num(p.min||0)+" "+p.unit,Situação:statusText(p),Observação:p.notes||"—"})),"estoque-padaria.pdf"));
 $("share-stock-pdf").addEventListener("click",()=>makePDF("Relatório completo do estoque",products.slice().sort((a,b)=>a.name.localeCompare(b.name,"pt-BR")).map(p=>({Produto:p.name,Categoria:p.category||"—",Quantidade:qty(p),"Limite mínimo":num(p.min||0)+" "+p.unit,Situação:statusText(p),Observação:p.notes||"—"})),"estoque-padaria.pdf",true));
-$("download-movements").addEventListener("click",()=>makePDF("Histórico de movimentações",moves.slice().sort((a,b)=>new Date(a.date)-new Date(b.date)).map(m=>({"Data e hora":dateFmt(m.date),Produto:m.name,Movimento:m.type==="entrada"?"Entrada":"Saída",Quantidade:num(m.qty)+" "+m.unit,"Saldo após":num(m.after)+" "+m.unit,Observação:m.note||"—"})),"historico-estoque.pdf"));
-$("export-backup").addEventListener("click",()=>{const blob=new Blob([JSON.stringify({products,moves,exportedAt:new Date().toISOString()},null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="backup-estoque-padaria.json";a.click();URL.revokeObjectURL(a.href);msg("Backup exportado.")});
+$("download-movements").addEventListener("click",async()=>{
+  let source=moves;
+  if(REMOTE_MODE){try{source=await apiRequest("/api/movements?all=1")}catch(error){msg(error.message);return}}
+  makePDF("Histórico de movimentações",source.slice().sort((a,b)=>new Date(a.date)-new Date(b.date)).map(m=>({"Data e hora":dateFmt(m.date),Produto:m.name,Movimento:m.type==="entrada"?"Entrada":"Saída",Quantidade:num(m.qty)+" "+m.unit,"Saldo após":num(m.after)+" "+m.unit,Observação:m.note||"—"})),"historico-estoque.pdf");
+});
+$("export-backup").addEventListener("click",async()=>{
+  const button=$("export-backup");button.disabled=true;
+  try{
+    const data=REMOTE_MODE?await apiRequest("/api/backup"):{products,moves,exportedAt:new Date().toISOString()};
+    const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");a.href=url;a.download="backup-estoque-padaria.json";a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    msg(data.movementsTruncated?"Backup exportado; há mais de 5.000 movimentações e o histórico foi limitado.":"Backup exportado.");
+  }catch(error){msg(error.message)}
+  finally{button.disabled=false}
+});
 $("import-backup").addEventListener("change",async e=>{
 const file=e.target.files[0];if(!file)return;
 if(REMOTE_MODE){msg("A restauração de backup no banco online ainda não está habilitada. O estoque compartilhado não foi alterado.");e.target.value="";return}
