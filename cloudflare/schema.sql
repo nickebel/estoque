@@ -1,6 +1,4 @@
 -- Estoque da Padaria — Cloudflare D1 (SQLite)
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE IF NOT EXISTS products (
   id TEXT PRIMARY KEY NOT NULL,
   name TEXT NOT NULL COLLATE NOCASE CHECK (length(trim(name)) > 0),
