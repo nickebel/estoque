@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('admin','manager','operator','viewer')),
   active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+  session_version INTEGER NOT NULL DEFAULT 1 CHECK (session_version >= 1),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   last_login_at TEXT
