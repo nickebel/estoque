@@ -255,7 +255,7 @@ function auditEntryStatement(env, entry) {
       entry.action,
       entry.productId || null,
       text(entry.productName,100) || "Produto",
-      "equipe",
+      text(entry.actor,40) || "equipe",
       JSON.stringify(entry.details || {}),
       entry.createdAt || nowIso()
     );
@@ -275,14 +275,80 @@ async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
   if (request.method === "OPTIONS") return new Response(null, {status:204});
-  if (path === "/api/health" && request.method === "GET") return json({ok:true,service:"estoque-padaria-api",runtimeSecretsConfigured:Boolean(env.APP_PASSWORD && env.SESSION_SECRET)});
+  if (path === "/api/health" && request.method === "GET") {
+    return json({ok:true,service:"estoque-padaria-api"});
+  }
+  if (path === "/api/auth/status" && request.method === "GET") {
+    const enabled = await usersTableExists(env);
+    if (!enabled) return json({accountsEnabled:false,setupRequired:false});
+    const totalUsers = await countUsers(env);
+    const admins = Number((await env.DB.prepare("SELECT COUNT(*) AS count FROM users WHERE active=1 AND role='admin'").first())?.count || 0);
+    return json({accountsEnabled:true,setupRequired:totalUsers===0||admins===0});
+  }
+  if (path === "/api/users/bootstrap" && request.method === "POST") {
+    if (!env.APP_PASSWORD || !env.SESSION_SECRET) return json({error:"A configuração do acesso administrativo está incompleta."},503);
+    if (!await usersTableExists(env)) {
+      return json({error:"A tabela de usuários ainda não foi criada. Execute a migração 0003 no D1."},503);
+    }
+    const body = await readJson(request);
+    if (typeof body.currentPassword !== "string" || !body.currentPassword) {
+      throw new RequestError("Informe a senha atual da equipe.",400);
+    }
+    const correct = constantTimeEqual(body.currentPassword,env.APP_PASSWORD);
+    const rate = await checkLoginRateLimit(request,env,correct);
+    if (!rate.allowed) {
+      return new Response(JSON.stringify({error:rate.locked?"Muitas tentativas. Aguarde 15 minutos antes de tentar novamente.":"A senha atual da equipe está incorreta."}),{
+        status:rate.locked?429:401,
+        headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store",...(rate.retryAfter?{"Retry-After":String(rate.retryAfter)}:{})}
+      });
+    }
+    const totalUsers = await countUsers(env);
+    const activeAdmins = Number((await env.DB.prepare("SELECT COUNT(*) AS count FROM users WHERE active=1 AND role='admin'").first())?.count || 0);
+    if (totalUsers>0 && activeAdmins>0) return json({error:"A configuração inicial já foi concluída."},409);
+    const username = usernameValue(body.username);
+    const displayName = text(body.displayName,80);
+    if (!displayName) throw new RequestError("Informe o nome do administrador.",400);
+    const password = validateUserPassword(body.password);
+    const record = await createPasswordRecord(password);
+    const timestamp = nowIso();
+    const inserted = await env.DB.prepare("INSERT INTO users (id,username,display_name,password_salt,password_hash,role,active,created_at,updated_at,last_login_at) SELECT ?,?,?,?,?, 'admin',1,?,?,NULL WHERE NOT EXISTS (SELECT 1 FROM users WHERE active=1 AND role='admin')")
+      .bind(crypto.randomUUID(),username,displayName,record.passwordSalt,record.passwordHash,timestamp,timestamp).run();
+    if (!inserted.meta.changes) return json({error:"Um administrador já foi configurado. Atualize a página e entre com sua conta."},409);
+    return json({ok:true});
+  }
   if (path === "/api/login" && request.method === "POST") {
-    if (!env.APP_PASSWORD || !env.SESSION_SECRET) return json({error:"Faltam configurar os segredos APP_PASSWORD e SESSION_SECRET no Cloudflare."},503);
+    if (!env.APP_PASSWORD || !env.SESSION_SECRET) return json({error:"A configuração do acesso está incompleta."},503);
     const body = await readJson(request);
     if (typeof body.password !== "string" || body.password.length === 0) {
-      throw new RequestError("Informe a senha de acesso.", 400);
+      throw new RequestError("Informe a senha de acesso.",400);
     }
-    const rate = await checkLoginRateLimit(request, env, constantTimeEqual(body.password, env.APP_PASSWORD));
+    const usersEnabled = await usersTableExists(env) && await countUsers(env)>0;
+    if (usersEnabled) {
+      if (typeof body.username !== "string" || !body.username.trim()) {
+        return json({error:"Informe seu usuário e sua senha individual."},400);
+      }
+      const username = usernameValue(body.username);
+      const user = await env.DB.prepare("SELECT id,username,display_name,password_salt,password_hash,role,active FROM users WHERE username=? COLLATE NOCASE").bind(username).first();
+      let passwordMatches = false;
+      if (user && Number(user.active)===1) {
+        passwordMatches = await verifyPassword(body.password,user.password_salt,user.password_hash);
+      }
+      const rate = await checkLoginRateLimit(request,env,passwordMatches);
+      if (!rate.allowed) {
+        return new Response(JSON.stringify({error:rate.locked?"Muitas tentativas. Aguarde 15 minutos antes de tentar novamente.":"Usuário ou senha incorretos."}),{
+          status:rate.locked?429:401,
+          headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store",...(rate.retryAfter?{"Retry-After":String(rate.retryAfter)}:{})}
+        });
+      }
+      const timestamp = nowIso();
+      await env.DB.prepare("UPDATE users SET last_login_at=?,updated_at=updated_at WHERE id=?").bind(timestamp,user.id).run();
+      return json({
+        token:await issueToken(env.SESSION_SECRET,{id:user.id,username:user.username,displayName:user.display_name,role:user.role}),
+        expiresIn:SESSION_SECONDS,
+        user:{id:user.id,username:user.username,displayName:user.display_name,role:user.role}
+      });
+    }
+    const rate = await checkLoginRateLimit(request,env,constantTimeEqual(body.password,env.APP_PASSWORD));
     if (!rate.allowed) {
       const headers = rate.retryAfter ? {"Retry-After":String(rate.retryAfter)} : {};
       return new Response(JSON.stringify({error:rate.locked ? "Muitas tentativas. Aguarde 15 minutos antes de tentar novamente." : "Senha incorreta."}), {
@@ -290,12 +356,77 @@ async function route(request, env) {
         headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store",...headers}
       });
     }
-    return json({token:await issueToken(env.SESSION_SECRET),expiresIn:SESSION_SECONDS});
+    return json({token:await issueToken(env.SESSION_SECRET),expiresIn:SESSION_SECONDS,user:{id:"legacy",username:"equipe",displayName:"Equipe",role:"admin"}});
   }
   if (!path.startsWith("/api/")) return json({error:"Rota não encontrada."},404);
-  if (!await authenticated(request,env)) return json({error:"Sessão expirada ou acesso não autorizado."},401);
+  const session = await authenticated(request,env);
+  if (!session) return json({error:"Sessão expirada ou acesso não autorizado."},401);
+  const role = session.role || "admin";
+  const canWrite = ["admin","manager","operator"].includes(role);
+  const canManageReports = ["admin","manager"].includes(role);
+  const isAdmin = role === "admin";
+  if (path === "/api/me" && request.method === "GET") {
+    return json({user:{id:session.sub,username:session.username,displayName:session.displayName,role:role,legacy:Boolean(session.legacy)}});
+  }
+  if (path === "/api/users" && request.method === "GET") {
+    if (!isAdmin) return json({error:"Somente administradores podem gerenciar acessos."},403);
+    if (!await usersTableExists(env)) return json({error:"Execute a migração 0003 para ativar usuários individuais."},503);
+    const result = await env.DB.prepare("SELECT id,username,display_name,role,active,created_at,updated_at,last_login_at FROM users ORDER BY username COLLATE NOCASE").all();
+    return json(result.results.map(row=>({id:row.id,username:row.username,displayName:row.display_name,role:row.role,active:Number(row.active)===1,createdAt:row.created_at,updatedAt:row.updated_at,lastLoginAt:row.last_login_at})));
+  }
+  if (path === "/api/users" && request.method === "POST") {
+    if (!isAdmin) return json({error:"Somente administradores podem criar acessos."},403);
+    if (!await usersTableExists(env)) return json({error:"Execute a migração 0003 para ativar usuários individuais."},503);
+    const body = await readJson(request);
+    const username = usernameValue(body.username);
+    const displayName = text(body.displayName,80);
+    if (!displayName) throw new RequestError("Informe o nome do funcionário.",400);
+    const password = validateUserPassword(body.password);
+    const roles = ["admin","manager","operator","viewer"];
+    const requestedRole = roles.includes(body.role)?body.role:"operator";
+    const existing = await env.DB.prepare("SELECT id FROM users WHERE username=? COLLATE NOCASE").bind(username).first();
+    if (existing) return json({error:"Esse nome de usuário já está cadastrado."},409);
+    const record = await createPasswordRecord(password);
+    const timestamp = nowIso();
+    const id=crypto.randomUUID();
+    try {
+      await env.DB.prepare("INSERT INTO users (id,username,display_name,password_salt,password_hash,role,active,created_at,updated_at,last_login_at) VALUES (?,?,?,?,?,?,1,?,?,NULL)")
+        .bind(id,username,displayName,record.passwordSalt,record.passwordHash,requestedRole,timestamp,timestamp).run();
+    } catch {
+      return json({error:"Não foi possível criar o usuário. Confira se o nome já está em uso."},409);
+    }
+    return json({id,username,displayName,role:requestedRole,active:true,createdAt:timestamp},201);
+  }
+  const userMatch = path.match(/^\/api\/users\/([^/]+)$/);
+  if (userMatch && request.method === "PUT") {
+    if (!isAdmin) return json({error:"Somente administradores podem alterar acessos."},403);
+    const id=decodeURIComponent(userMatch[1]);
+    const body=await readJson(request);
+    const existing=await env.DB.prepare("SELECT id,username,display_name,role,active FROM users WHERE id=?").bind(id).first();
+    if (!existing) return json({error:"Usuário não encontrado."},404);
+    const displayName=body.displayName===undefined?existing.display_name:text(body.displayName,80);
+    if (!displayName) throw new RequestError("Informe o nome do funcionário.",400);
+    const roles=["admin","manager","operator","viewer"];
+    const nextRole=body.role===undefined?existing.role:body.role;
+    if (!roles.includes(nextRole)) throw new RequestError("Perfil de acesso inválido.",400);
+    const active=body.active===undefined?Number(existing.active)===1:Boolean(body.active);
+    if (id===session.sub && (!active || nextRole!=="admin")) return json({error:"Não é possível desativar ou rebaixar o administrador conectado."},400);
+    const losesAdmin=Number(existing.active)===1 && existing.role==="admin" && (!active || nextRole!=="admin");
+    if (losesAdmin) {
+      const adminCount=Number((await env.DB.prepare("SELECT COUNT(*) AS count FROM users WHERE active=1 AND role='admin'").first())?.count||0);
+      if (adminCount<=1) return json({error:"Mantenha pelo menos um administrador ativo."},400);
+    }
+    let record=null;
+    if (body.password!==undefined && body.password!=="") record=await createPasswordRecord(validateUserPassword(body.password));
+    const timestamp=nowIso();
+    await env.DB.prepare("UPDATE users SET display_name=?,role=?,active=?,password_salt=COALESCE(?,password_salt),password_hash=COALESCE(?,password_hash),updated_at=? WHERE id=?")
+      .bind(displayName,nextRole,active?1:0,record?.passwordSalt||null,record?.passwordHash||null,timestamp,id).run();
+    return json({id,username:existing.username,displayName,role:nextRole,active,updatedAt:timestamp});
+  }
+
 
   if (path === "/api/audit" && request.method === "GET") {
+    if (!canManageReports) return json({error:"Seu perfil não permite consultar a auditoria."},403);
     if (!await auditTableExists(env)) {
       return json({enabled:false,events:[],message:"A trilha de auditoria ainda precisa ser ativada no banco."});
     }
@@ -319,6 +450,7 @@ async function route(request, env) {
     return json(result.results.map(mapProduct));
   }
   if (path === "/api/products" && request.method === "POST") {
+    if (!canWrite) return json({error:"Seu perfil não permite cadastrar produtos."},403);
     const body = productInput(await readJson(request));
     const id = crypto.randomUUID(), timestamp = nowIso();
     const statements = [
@@ -327,13 +459,13 @@ async function route(request, env) {
     ];
     if (body.qty > 0) {
       statements.push(env.DB.prepare("INSERT INTO movements (id,product_id,product_name,unit,movement_type,quantity,balance_after,note,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
-        .bind(crypto.randomUUID(),id,body.name,body.unit,"entrada",body.qty,body.qty,"Saldo inicial","equipe",timestamp));
+        .bind(crypto.randomUUID(),id,body.name,body.unit,"entrada",body.qty,body.qty,"Saldo inicial",session.username,timestamp));
     }
     if (await auditTableExists(env)) {
       statements.push(auditEntryStatement(env,{
         action:"product_created",productId:id,productName:body.name,
         details:{category:body.category,unit:body.unit,initialQuantity:body.qty},
-        createdAt:timestamp
+        createdAt:timestamp,actor:session.username
       }));
     }
     await env.DB.batch(statements);
@@ -342,6 +474,7 @@ async function route(request, env) {
   }
   const productMatch = path.match(/^\/api\/products\/([^/]+)$/);
   if (productMatch && request.method === "PUT") {
+    if (!canWrite) return json({error:"Seu perfil não permite alterar produtos."},403);
     const id = decodeURIComponent(productMatch[1]);
     const requestBody = await readJson(request);
     const body = productInput(requestBody);
@@ -372,7 +505,7 @@ async function route(request, env) {
       if (auditEnabled && fieldsChanged.length) {
         statements.push(auditEntryStatement(env,{
           action:"product_updated",productId:id,productName:body.name,
-          details:{fieldsChanged,before,after},createdAt:timestamp
+          details:{fieldsChanged,before,after},createdAt:timestamp,actor:session.username
         }));
       }
       const results = await env.DB.batch(statements);
@@ -384,7 +517,7 @@ async function route(request, env) {
         env.DB.prepare("UPDATE products SET name=?,category=?,unit=?,quantity=?,min_quantity=?,notes=?,updated_at=? WHERE id=? AND quantity=?")
           .bind(body.name,body.category,body.unit,body.qty,body.min,body.notes,timestamp,id,Number(old.quantity)),
         env.DB.prepare("INSERT INTO movements (id,product_id,product_name,unit,movement_type,quantity,balance_after,note,created_by,created_at) SELECT ?,?,?,?,?,?,?,?,?,? WHERE changes()=1")
-          .bind(crypto.randomUUID(),id,body.name,body.unit,type,movementQty,body.qty,adjustmentNote,"equipe",timestamp)
+          .bind(crypto.randomUUID(),id,body.name,body.unit,type,movementQty,body.qty,adjustmentNote,session.username,timestamp)
       ];
       if (auditEnabled) {
         statements.push(auditEntryStatement(env,{
@@ -402,6 +535,7 @@ async function route(request, env) {
     const row = await env.DB.prepare("SELECT * FROM products WHERE id=?").bind(id).first();
     return json(mapProduct(row));
   }
+  if (!isAdmin && productMatch && request.method === "DELETE") return json({error:"Somente administradores podem excluir produtos."},403);
   if (productMatch && request.method === "DELETE") {
     const id = decodeURIComponent(productMatch[1]);
     const old = await env.DB.prepare("SELECT id,name,category,unit,quantity FROM products WHERE id=?").bind(id).first();
@@ -411,7 +545,7 @@ async function route(request, env) {
       statements.push(auditEntryStatement(env,{
         action:"product_deleted",productId:id,productName:old.name,
         details:{category:old.category,unit:old.unit,quantityAtDeletion:Number(old.quantity)},
-        createdAt:nowIso()
+        createdAt:nowIso(),actor:session.username
       }));
     }
     const results = await env.DB.batch(statements);
@@ -424,6 +558,7 @@ async function route(request, env) {
     return json(result.results.map(mapMovement));
   }
   if (path === "/api/backup" && request.method === "GET") {
+    if (!canManageReports) return json({error:"Seu perfil não permite exportar backups."},403);
     const auditEnabled = await auditTableExists(env);
     const [productRows, movementRows, auditRows] = await Promise.all([
       env.DB.prepare("SELECT * FROM products ORDER BY name COLLATE NOCASE").all(),
@@ -454,6 +589,7 @@ async function route(request, env) {
     });
   }
   if (path === "/api/movements" && request.method === "POST") {
+    if (!canWrite) return json({error:"Seu perfil não permite registrar movimentações."},403);
     const body = await readJson(request);
     const productId = text(body.productId,80);
     const type = body.type === "entrada" || body.type === "saida" ? body.type : "";
@@ -471,14 +607,14 @@ async function route(request, env) {
     const update = type === "entrada"
       ? env.DB.prepare(updateSql).bind(quantity,timestamp,productId,oldQty)
       : env.DB.prepare(updateSql).bind(quantity,timestamp,productId,oldQty,quantity);
-    const insert = env.DB.prepare("INSERT INTO movements (id,product_id,product_name,unit,movement_type,quantity,balance_after,note,created_by,created_at) SELECT ?,id,name,unit,?,?,?,?,'equipe',? FROM products WHERE id=? AND quantity=? AND changes()=1")
-      .bind(movementId,type,quantity,nextQty,text(body.note),timestamp,productId,nextQty);
+    const insert = env.DB.prepare("INSERT INTO movements (id,product_id,product_name,unit,movement_type,quantity,balance_after,note,created_by,created_at) SELECT ?,id,name,unit,?,?,?,?,?,? FROM products WHERE id=? AND quantity=? AND changes()=1")
+      .bind(movementId,type,quantity,nextQty,text(body.note),session.username,timestamp,productId,nextQty);
     const statements = [update,insert];
     if (await auditTableExists(env)) {
       statements.push(auditEntryStatement(env,{
         action:"movement_created",productId:productId,productName:old.name,
         details:{type,quantity,unit:old.unit,previousBalance:oldQty,balanceAfter:nextQty,note:text(body.note)},
-        createdAt:timestamp
+        createdAt:timestamp,actor:session.username
       }));
     }
     const results = await env.DB.batch(statements);
