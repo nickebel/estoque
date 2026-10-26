@@ -183,6 +183,23 @@ function mapMovement(row) {
   return {id:row.id,date:row.created_at,productId:row.product_id,name:row.product_name,unit:row.unit,type:row.movement_type,qty:Number(row.quantity),after:Number(row.balance_after),note:row.note};
 }
 function nowIso() { return new Date().toISOString(); }
+
+async function auditTableExists(env) {
+  const row = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='audit_events'").first();
+  return Boolean(row);
+}
+function auditEntryStatement(env, entry) {
+  return env.DB.prepare("INSERT INTO audit_events (id,action,product_id,product_name,actor,details_json,created_at) SELECT ?,?,?,?,?,?,? WHERE changes()=1")
+    .bind(
+      crypto.randomUUID(),
+      entry.action,
+      entry.productId || null,
+      text(entry.productName,100) || "Produto",
+      "equipe",
+      JSON.stringify(entry.details || {}),
+      entry.createdAt || nowIso()
+    );
+}
 function productInput(body) {
   const name = text(body.name, 100), unit = text(body.unit, 25);
   if (!name) throw new RequestError("Informe o nome do produto.");
@@ -218,6 +235,25 @@ async function route(request, env) {
   if (!path.startsWith("/api/")) return json({error:"Rota não encontrada."},404);
   if (!await authenticated(request,env)) return json({error:"Sessão expirada ou acesso não autorizado."},401);
 
+  if (path === "/api/audit" && request.method === "GET") {
+    if (!await auditTableExists(env)) {
+      return json({enabled:false,events:[],message:"A trilha de auditoria ainda precisa ser ativada no banco."});
+    }
+    const rawLimit = Number(url.searchParams.get("limit") || 100);
+    const limit = Number.isInteger(rawLimit) && rawLimit > 0 ? Math.min(rawLimit,200) : 100;
+    const result = await env.DB.prepare("SELECT id,action,product_id,product_name,actor,details_json,created_at FROM audit_events ORDER BY created_at DESC LIMIT ?")
+      .bind(limit).all();
+    const events = result.results.map(row => {
+      let details = {};
+      try { details = JSON.parse(row.details_json || "{}"); } catch {}
+      return {
+        id:row.id,action:row.action,productId:row.product_id,productName:row.product_name,
+        actor:row.actor,details,createdAt:row.created_at
+      };
+    });
+    return json({enabled:true,events});
+  }
+
   if (path === "/api/products" && request.method === "GET") {
     const result = await env.DB.prepare("SELECT * FROM products ORDER BY name COLLATE NOCASE").all();
     return json(result.results.map(mapProduct));
@@ -233,6 +269,13 @@ async function route(request, env) {
       statements.push(env.DB.prepare("INSERT INTO movements (id,product_id,product_name,unit,movement_type,quantity,balance_after,note,created_by,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
         .bind(crypto.randomUUID(),id,body.name,body.unit,"entrada",body.qty,body.qty,"Saldo inicial","equipe",timestamp));
     }
+    if (await auditTableExists(env)) {
+      statements.push(auditEntryStatement(env,{
+        action:"product_created",productId:id,productName:body.name,
+        details:{category:body.category,unit:body.unit,initialQuantity:body.qty},
+        createdAt:timestamp
+      }));
+    }
     await env.DB.batch(statements);
     const row = await env.DB.prepare("SELECT * FROM products WHERE id=?").bind(id).first();
     return json(mapProduct(row),201);
@@ -240,28 +283,60 @@ async function route(request, env) {
   const productMatch = path.match(/^\/api\/products\/([^/]+)$/);
   if (productMatch && request.method === "PUT") {
     const id = decodeURIComponent(productMatch[1]);
-    const body = productInput(await readJson(request));
+    const requestBody = await readJson(request);
+    const body = productInput(requestBody);
     const old = await env.DB.prepare("SELECT * FROM products WHERE id=?").bind(id).first();
     if (!old) return json({error:"Produto não encontrado."},404);
-    const adjustmentNote = text(body.adjustmentNote,180);
+    const adjustmentNote = text(requestBody.adjustmentNote,180);
     const quantityChanged = body.qty !== Number(old.quantity);
     if (quantityChanged && !adjustmentNote) {
       throw new RequestError("Informe o motivo do ajuste de estoque.",400);
     }
     const timestamp = nowIso();
+    const auditEnabled = await auditTableExists(env);
+    const before = {
+      name:old.name,category:old.category,unit:old.unit,
+      min:Number(old.min_quantity),notes:old.notes
+    };
+    const after = {
+      name:body.name,category:body.category,unit:body.unit,
+      min:body.min,notes:body.notes
+    };
+    const fieldsChanged = Object.keys(before).filter(key => before[key] !== after[key]);
+
     if (!quantityChanged) {
-      const result = await env.DB.prepare("UPDATE products SET name=?,category=?,unit=?,quantity=?,min_quantity=?,notes=?,updated_at=? WHERE id=? AND quantity=?")
-        .bind(body.name,body.category,body.unit,body.qty,body.min,body.notes,timestamp,id,Number(old.quantity)).run();
-      if (!result.meta.changes) return json({error:"O estoque mudou em outro aparelho. Atualize a tela e tente novamente."},409);
+      const statements = [
+        env.DB.prepare("UPDATE products SET name=?,category=?,unit=?,quantity=?,min_quantity=?,notes=?,updated_at=? WHERE id=? AND quantity=?")
+          .bind(body.name,body.category,body.unit,body.qty,body.min,body.notes,timestamp,id,Number(old.quantity))
+      ];
+      if (auditEnabled && fieldsChanged.length) {
+        statements.push(auditEntryStatement(env,{
+          action:"product_updated",productId:id,productName:body.name,
+          details:{fieldsChanged,before,after},createdAt:timestamp
+        }));
+      }
+      const results = await env.DB.batch(statements);
+      if (!results[0].meta.changes) return json({error:"O estoque mudou em outro aparelho. Atualize a tela e tente novamente."},409);
     } else {
       const type = body.qty > Number(old.quantity) ? "entrada" : "saida";
       const movementQty = Math.abs(body.qty-Number(old.quantity));
-      const results = await env.DB.batch([
+      const statements = [
         env.DB.prepare("UPDATE products SET name=?,category=?,unit=?,quantity=?,min_quantity=?,notes=?,updated_at=? WHERE id=? AND quantity=?")
           .bind(body.name,body.category,body.unit,body.qty,body.min,body.notes,timestamp,id,Number(old.quantity)),
         env.DB.prepare("INSERT INTO movements (id,product_id,product_name,unit,movement_type,quantity,balance_after,note,created_by,created_at) SELECT ?,?,?,?,?,?,?,?,?,? WHERE changes()=1")
           .bind(crypto.randomUUID(),id,body.name,body.unit,type,movementQty,body.qty,adjustmentNote,"equipe",timestamp)
-      ]);
+      ];
+      if (auditEnabled) {
+        statements.push(auditEntryStatement(env,{
+          action:"stock_adjusted",productId:id,productName:body.name,
+          details:{
+            previousQuantity:Number(old.quantity),newQuantity:body.qty,unit:body.unit,
+            reason:adjustmentNote,fieldsChanged
+          },
+          createdAt:timestamp
+        }));
+      }
+      const results = await env.DB.batch(statements);
       if (!results[0].meta.changes) return json({error:"O estoque mudou em outro aparelho. Atualize a tela e tente novamente."},409);
     }
     const row = await env.DB.prepare("SELECT * FROM products WHERE id=?").bind(id).first();
@@ -269,8 +344,18 @@ async function route(request, env) {
   }
   if (productMatch && request.method === "DELETE") {
     const id = decodeURIComponent(productMatch[1]);
-    const result = await env.DB.prepare("DELETE FROM products WHERE id=?").bind(id).run();
-    if (!result.meta.changes) return json({error:"Produto não encontrado."},404);
+    const old = await env.DB.prepare("SELECT id,name,category,unit,quantity FROM products WHERE id=?").bind(id).first();
+    if (!old) return json({error:"Produto não encontrado."},404);
+    const statements = [env.DB.prepare("DELETE FROM products WHERE id=?").bind(id)];
+    if (await auditTableExists(env)) {
+      statements.push(auditEntryStatement(env,{
+        action:"product_deleted",productId:id,productName:old.name,
+        details:{category:old.category,unit:old.unit,quantityAtDeletion:Number(old.quantity)},
+        createdAt:nowIso()
+      }));
+    }
+    const results = await env.DB.batch(statements);
+    if (!results[0].meta.changes) return json({error:"Produto não encontrado."},404);
     return json({ok:true});
   }
   if (path === "/api/movements" && request.method === "GET") {
@@ -312,7 +397,15 @@ async function route(request, env) {
       : env.DB.prepare(updateSql).bind(quantity,timestamp,productId,oldQty,quantity);
     const insert = env.DB.prepare("INSERT INTO movements (id,product_id,product_name,unit,movement_type,quantity,balance_after,note,created_by,created_at) SELECT ?,id,name,unit,?,?,?,?,'equipe',? FROM products WHERE id=? AND quantity=? AND changes()=1")
       .bind(movementId,type,quantity,nextQty,text(body.note),timestamp,productId,nextQty);
-    const results = await env.DB.batch([update,insert]);
+    const statements = [update,insert];
+    if (await auditTableExists(env)) {
+      statements.push(auditEntryStatement(env,{
+        action:"movement_created",productId:productId,productName:old.name,
+        details:{type,quantity,unit:old.unit,previousBalance:oldQty,balanceAfter:nextQty,note:text(body.note)},
+        createdAt:timestamp
+      }));
+    }
+    const results = await env.DB.batch(statements);
     if (!results[0].meta.changes) return json({error:"O estoque foi alterado em outro aparelho. Atualize e tente novamente."},409);
     const row = await env.DB.prepare("SELECT * FROM movements WHERE id=?").bind(movementId).first();
     if (!row) return json({error:"Saldo atualizado, mas não foi possível confirmar o histórico. Atualize o estoque."},500);
