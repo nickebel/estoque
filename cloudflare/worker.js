@@ -364,17 +364,33 @@ async function route(request, env) {
     return json(result.results.map(mapMovement));
   }
   if (path === "/api/backup" && request.method === "GET") {
-    const [productRows, movementRows] = await Promise.all([
+    const auditEnabled = await auditTableExists(env);
+    const [productRows, movementRows, auditRows] = await Promise.all([
       env.DB.prepare("SELECT * FROM products ORDER BY name COLLATE NOCASE").all(),
-      env.DB.prepare("SELECT * FROM movements ORDER BY created_at DESC LIMIT 5000").all()
+      env.DB.prepare("SELECT * FROM movements ORDER BY created_at DESC LIMIT 5000").all(),
+      auditEnabled
+        ? env.DB.prepare("SELECT id,action,product_id,product_name,actor,details_json,created_at FROM audit_events ORDER BY created_at DESC LIMIT 10000").all()
+        : Promise.resolve({results:[]})
     ]);
     const moves = movementRows.results.map(mapMovement);
+    const auditEvents = auditRows.results.map(row => {
+      let details = {};
+      try { details = JSON.parse(row.details_json || "{}"); } catch {}
+      return {
+        id:row.id,action:row.action,productId:row.product_id,productName:row.product_name,
+        actor:row.actor,details,createdAt:row.created_at
+      };
+    });
     return json({
       products: productRows.results.map(mapProduct),
       moves,
+      auditEvents,
+      auditEnabled,
       exportedAt: nowIso(),
       movementLimit: 5000,
-      movementsTruncated: moves.length >= 5000
+      movementsTruncated: moves.length >= 5000,
+      auditEventLimit: 10000,
+      auditEventsTruncated: auditEvents.length >= 10000
     });
   }
   if (path === "/api/movements" && request.method === "POST") {
