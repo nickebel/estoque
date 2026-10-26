@@ -179,11 +179,45 @@ $("movements-table").innerHTML=moves.slice().sort((a,b)=>new Date(b.date)-new Da
 $("movements-empty").classList.toggle("hidden",moves.length>0);
 }
 function resetForm(){$("product-form").reset();$("product-id").value="";$("p-qty").value="0";$("p-min").value="0";$("product-title").textContent="Cadastrar produto";$("cancel-edit").classList.add("hidden")}
-$("product-form").addEventListener("submit",e=>{e.preventDefault();const id=$("product-id").value;const name=$("p-name").value.trim(),unit=$("p-unit").value.trim();if(!name||!unit){msg("Preencha o nome e a unidade.");return}const data={name,category:$("p-category").value.trim(),unit,qty:Number($("p-qty").value),min:Number($("p-min").value||0),notes:$("p-notes").value.trim()};if(data.qty<0||data.min<0){msg("Use quantidades iguais ou maiores que zero.");return}if(id){const ix=products.findIndex(p=>p.id===id);if(ix>=0){const old=products[ix];if(old.qty!==data.qty)moves.push({id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),date:new Date().toISOString(),productId:id,name,unit,type:data.qty>old.qty?"entrada":"saida",qty:Math.abs(data.qty-old.qty),after:data.qty,note:"Ajuste feito no cadastro"});products[ix]={...old,...data}}msg("Produto atualizado.")}else{data.id=crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random();products.push(data);msg("Produto cadastrado.")}save();resetForm()});
+$("product-form").addEventListener("submit",async e=>{
+e.preventDefault();
+const id=$("product-id").value;
+const name=$("p-name").value.trim(),unit=$("p-unit").value.trim();
+if(!name||!unit){msg("Preencha o nome e a unidade.");return}
+const data={name,category:$("p-category").value.trim(),unit,qty:Number($("p-qty").value),min:Number($("p-min").value||0),notes:$("p-notes").value.trim()};
+if(!Number.isFinite(data.qty)||!Number.isFinite(data.min)||data.qty<0||data.min<0){msg("Use quantidades iguais ou maiores que zero.");return}
+if(REMOTE_MODE){
+  try{
+    if(id)await apiRequest("/api/products/"+encodeURIComponent(id),{method:"PUT",body:data});
+    else await apiRequest("/api/products",{method:"POST",body:data});
+    await refreshRemote();resetForm();msg(id?"Produto atualizado no estoque compartilhado.":"Produto cadastrado no estoque compartilhado.");
+  }catch(error){msg(error.message)}
+  return;
+}
+if(id){const ix=products.findIndex(p=>p.id===id);if(ix>=0){const old=products[ix];if(old.qty!==data.qty)moves.push({id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),date:new Date().toISOString(),productId:id,name,unit,type:data.qty>old.qty?"entrada":"saida",qty:Math.abs(data.qty-old.qty),after:data.qty,note:"Ajuste feito no cadastro"});products[ix]={...old,...data}}msg("Produto atualizado.")}else{data.id=crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random();products.push(data);msg("Produto cadastrado.")}
+save();resetForm()
+});
 $("cancel-edit").addEventListener("click",resetForm);
-$("products-table").addEventListener("click",e=>{const edit=e.target.closest("[data-edit]"),del=e.target.closest("[data-delete]");if(edit){const p=products.find(p=>p.id===edit.dataset.edit);if(!p)return;$("product-id").value=p.id;$("p-name").value=p.name;$("p-category").value=p.category||"";$("p-unit").value=p.unit;$("p-qty").value=p.qty;$("p-min").value=p.min||0;$("p-notes").value=p.notes||"";$("product-title").textContent="Editar produto";$("cancel-edit").classList.remove("hidden");$("p-name").focus();window.scrollTo({top:0,behavior:"smooth"})}if(del){const p=products.find(p=>p.id===del.dataset.delete);if(!p)return;if(confirm('Excluir "'+p.name+'"? O histórico antigo será mantido.')){products=products.filter(x=>x.id!==p.id);save();msg("Produto excluído.")}}});
+$("products-table").addEventListener("click",async e=>{
+const edit=e.target.closest("[data-edit]"),del=e.target.closest("[data-delete]");
+if(edit){const p=products.find(p=>p.id===edit.dataset.edit);if(!p)return;$("product-id").value=p.id;$("p-name").value=p.name;$("p-category").value=p.category||"";$("p-unit").value=p.unit;$("p-qty").value=p.qty;$("p-min").value=p.min||0;$("p-notes").value=p.notes||"";$("product-title").textContent="Editar produto";$("cancel-edit").classList.remove("hidden");$("p-name").focus();window.scrollTo({top:0,behavior:"smooth"})}
+if(del){const p=products.find(p=>p.id===del.dataset.delete);if(!p)return;if(confirm('Excluir "'+p.name+'"? O histórico antigo será mantido.')){if(REMOTE_MODE){try{await apiRequest("/api/products/"+encodeURIComponent(p.id),{method:"DELETE"});await refreshRemote();msg("Produto excluído do estoque compartilhado.")}catch(error){msg(error.message)}}else{products=products.filter(x=>x.id!==p.id);save();msg("Produto excluído.")}}}
+});
 $("product-filter").addEventListener("input",render);
-$("movement-form").addEventListener("submit",e=>{e.preventDefault();const p=products.find(p=>p.id===$("m-product").value),type=$("m-type").value,amount=Number($("m-qty").value);if(!p){msg("Cadastre ou selecione um produto.");return}if(!(amount>0)){msg("Informe uma quantidade maior que zero.");return}const result=Number(p.qty)+(type==="entrada"?amount:-amount);if(result<0){msg("A saída é maior que o saldo disponível ("+qty(p)+").");return}p.qty=Math.round((result+Number.EPSILON)*100)/100;moves.push({id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),date:new Date().toISOString(),productId:p.id,name:p.name,unit:p.unit,type,qty:amount,after:p.qty,note:$("m-note").value.trim()});save();$("movement-form").reset();msg("Movimentação registrada.")});
+$("movement-form").addEventListener("submit",async e=>{
+e.preventDefault();
+const p=products.find(p=>p.id===$("m-product").value),type=$("m-type").value,amount=Number($("m-qty").value);
+if(!p){msg("Cadastre ou selecione um produto.");return}
+if(!(amount>0)||!Number.isFinite(amount)){msg("Informe uma quantidade maior que zero.");return}
+if(REMOTE_MODE){
+  try{await apiRequest("/api/movements",{method:"POST",body:{productId:p.id,type,qty:amount,note:$("m-note").value.trim()}});await refreshRemote();$("movement-form").reset();msg("Movimentação registrada no estoque compartilhado.")}
+  catch(error){msg(error.message)}
+  return;
+}
+const result=Number(p.qty)+(type==="entrada"?amount:-amount);
+if(result<0){msg("A saída é maior que o saldo disponível ("+qty(p)+").");return}
+p.qty=Math.round((result+Number.EPSILON)*100)/100;moves.push({id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),date:new Date().toISOString(),productId:p.id,name:p.name,unit:p.unit,type,qty:amount,after:p.qty,note:$("m-note").value.trim()});save();$("movement-form").reset();msg("Movimentação registrada.")
+});
 $("query-form").addEventListener("submit",e=>{e.preventDefault();const q=$("query-input").value.trim(),found=findProducts(q),el=$("query-result");if(!found.length){el.innerHTML='<div class="result"><div><b>Nenhum produto encontrado</b><br><small>Confira o nome ou cadastre o produto primeiro.</small></div><button class="btn small" id="query-register">Cadastrar produto</button></div>';const b=$("query-register");b.addEventListener("click",()=>{showView("produtos");$("p-name").value=q;$("p-name").focus()});return}const list=found.map(p=>'<div class="result"><div><b>'+safe(p.name)+'</b><br><small>'+safe(p.category||"Sem categoria")+' · '+status(p)+'</small></div><div><div class="qty">'+safe(qty(p))+'</div><small>Limite mínimo: '+num(p.min||0)+' '+safe(p.unit)+'</small></div><button class="btn small" data-query-pdf="'+safe(p.id)+'">PDF</button></div>').join("");el.innerHTML=list});
 $("query-result").addEventListener("click",e=>{const b=e.target.closest("[data-query-pdf]");if(b){const p=products.find(p=>p.id===b.dataset.queryPdf);if(p)makePDF("Consulta de estoque",[{Produto:p.name,Categoria:p.category||"—",Quantidade:qty(p),"Limite mínimo":num(p.min||0)+" "+p.unit,Situação:statusText(p),Observação:p.notes||"—"}],"consulta-"+slug(p.name)+".pdf") }});
 $("product-filter").value="";
@@ -194,8 +228,13 @@ $("download-stock-pdf").addEventListener("click",()=>makePDF("Relatório complet
 $("share-stock-pdf").addEventListener("click",()=>makePDF("Relatório completo do estoque",products.slice().sort((a,b)=>a.name.localeCompare(b.name,"pt-BR")).map(p=>({Produto:p.name,Categoria:p.category||"—",Quantidade:qty(p),"Limite mínimo":num(p.min||0)+" "+p.unit,Situação:statusText(p),Observação:p.notes||"—"})),"estoque-padaria.pdf",true));
 $("download-movements").addEventListener("click",()=>makePDF("Histórico de movimentações",moves.slice().sort((a,b)=>new Date(a.date)-new Date(b.date)).map(m=>({"Data e hora":dateFmt(m.date),Produto:m.name,Movimento:m.type==="entrada"?"Entrada":"Saída",Quantidade:num(m.qty)+" "+m.unit,"Saldo após":num(m.after)+" "+m.unit,Observação:m.note||"—"})),"historico-estoque.pdf"));
 $("export-backup").addEventListener("click",()=>{const blob=new Blob([JSON.stringify({products,moves,exportedAt:new Date().toISOString()},null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="backup-estoque-padaria.json";a.click();URL.revokeObjectURL(a.href);msg("Backup exportado.")});
-$("import-backup").addEventListener("change",async e=>{const file=e.target.files[0];if(!file)return;try{const d=JSON.parse(await file.text());if(!Array.isArray(d.products)||!Array.isArray(d.moves))throw new Error("Formato inválido");if(!confirm("A importação substituirá os dados atuais deste navegador. Continuar?"))return;products=d.products;moves=d.moves;save();resetForm();msg("Backup restaurado.")}catch(err){msg("Não foi possível ler o backup. Escolha um JSON exportado pelo aplicativo.")}finally{e.target.value=""}});
+$("import-backup").addEventListener("change",async e=>{
+const file=e.target.files[0];if(!file)return;
+if(REMOTE_MODE){msg("A restauração de backup no banco online ainda não está habilitada. O estoque compartilhado não foi alterado.");e.target.value="";return}
+try{const d=JSON.parse(await file.text());if(!Array.isArray(d.products)||!Array.isArray(d.moves))throw new Error("Formato inválido");if(!confirm("A importação substituirá os dados atuais deste navegador. Continuar?"))return;products=d.products;moves=d.moves;save();resetForm();msg("Backup restaurado.")}catch(err){msg("Não foi possível ler o backup. Escolha um JSON exportado pelo aplicativo.")}finally{e.target.value=""}});
 load();render();initRemote();
+})();
+
 })();
 </script>
 
