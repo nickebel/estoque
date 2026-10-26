@@ -18,6 +18,17 @@ function load(){try{const d=JSON.parse(localStorage.getItem(STORE)||"{}");produc
 function save(){if(!REMOTE_MODE)localStorage.setItem(STORE,JSON.stringify({products,moves}));render()}
 
 function msg(s){const t=$("toast");t.textContent=s;t.classList.remove("hidden");clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.add("hidden"),3200)}
+function clearAuthenticatedState(){
+  authToken="";
+  sessionStorage.removeItem("estoquePadariaApiToken");
+  currentUser=null;
+  products=[];
+  moves=[];
+  usersList=[];
+  auditState={enabled:false,events:[],message:""};
+  applyRoleUI();
+  render();
+}
 async function apiRequest(path,options={}){
   if(!API_BASE)throw new Error("O endereço do banco online ainda não foi configurado.");
   const headers={"Accept":"application/json"};
@@ -28,9 +39,9 @@ async function apiRequest(path,options={}){
   const data=await response.json().catch(()=>({error:"Resposta inválida da API."}));
   if(!response.ok){
     if(response.status===401&&path!=="/api/login"){
-      authToken="";sessionStorage.removeItem("estoquePadariaApiToken");
+      clearAuthenticatedState();
       $("login-overlay").classList.remove("hidden");
-      $("login-error").textContent="Sua sessão expirou. Entre novamente.";
+      $("login-error").textContent="Sua sessão expirou ou foi revogada. Entre novamente.";
     }
     throw new Error(data.error||"Não foi possível acessar o banco online.");
   }
@@ -72,6 +83,7 @@ async function initRemote(){
   if(!REMOTE_MODE){$("storage-status").textContent="Modo local · dispositivo único";$("data-notice").textContent="O modo local mantém os dados apenas neste navegador. Para operar com a equipe, ative a conexão com o banco compartilhado.";return}
   $("backup-restore-card").classList.add("hidden");
   enableRemoteActions();
+  applyRoleUI();
   $("storage-status").textContent="Banco online · acesso protegido";
   $("data-notice").textContent="Produtos e movimentações são compartilhados entre dispositivos autorizados. Exporte backups regularmente e guarde-os em local seguro.";
   try {
@@ -119,9 +131,12 @@ $("refresh-audit").addEventListener("click",async()=>{
   }finally{button.disabled=false;button.textContent="Atualizar auditoria";}
 });
 $("logout-now").addEventListener("click",()=>{
-  authToken="";sessionStorage.removeItem("estoquePadariaApiToken");
-  products=[];moves=[];render();
-  $("login-password").value="";$("login-error").textContent="";
+  clearAuthenticatedState();
+  $("login-password").value="";$("login-username").value="";$("login-error").textContent="";
+  $("login-password").type="password";
+  $("toggle-password-label").textContent="Mostrar";
+  $("toggle-password").setAttribute("aria-label","Mostrar senha");
+  $("toggle-password").setAttribute("aria-pressed","false");
   $("login-overlay").classList.remove("hidden");
   msg("Sessão encerrada neste dispositivo.");
 });
@@ -188,7 +203,7 @@ $("bootstrap-admin-form").addEventListener("submit",async e=>{
 
 
 function applyRoleUI(){
-  const role=currentUser?.role||"admin";
+  const role=currentUser?.role||(REMOTE_MODE?"viewer":"admin");
   const individual=Boolean(currentUser&&!currentUser.legacy);
   const admin=individual&&role==="admin";
   $("nav-users").classList.toggle("hidden",!admin);
@@ -322,7 +337,7 @@ const f=norm($("product-filter").value);
 const filtered=products.filter(p=>norm(p.name+" "+p.category).includes(f)).sort((a,b)=>a.name.localeCompare(b.name,"pt-BR"));
 $("products-table").innerHTML=filtered.map(p=>'<tr><td><strong>'+safe(p.name)+'</strong><div class="subline">'+safe(p.notes)+'</div></td><td>'+safe(p.category||"—")+'</td><td>'+safe(qty(p))+'</td><td>'+num(p.min||0)+' '+safe(p.unit)+'</td><td>'+status(p)+'</td><td><button class="btn small" data-edit="'+safe(p.id)+'">Editar</button> <button class="btn small danger" data-delete="'+safe(p.id)+'">Excluir</button></td></tr>').join("");
 $("products-empty").classList.toggle("hidden",filtered.length>0);
-const roleForActions=currentUser?.role||"admin";
+const roleForActions=currentUser?.role||(REMOTE_MODE?"viewer":"admin");
 document.querySelectorAll("#products-table [data-edit]").forEach(button=>button.classList.toggle("hidden",REMOTE_MODE&&!["admin","manager","operator"].includes(roleForActions)));
 document.querySelectorAll("#products-table [data-delete]").forEach(button=>button.classList.toggle("hidden",REMOTE_MODE&&roleForActions!=="admin"));
 $("m-product").innerHTML='<option value="">Selecione um produto</option>'+products.slice().sort((a,b)=>a.name.localeCompare(b.name,"pt-BR")).map(p=>'<option value="'+safe(p.id)+'">'+safe(p.name)+' ('+safe(qty(p))+')</option>').join("");
