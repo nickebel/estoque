@@ -10,7 +10,7 @@ Aplicação web simples para cadastrar produtos, acompanhar saldo e gerar relat�
 - Busca rápida por nome, categoria e observação.
 - PDF de consulta individual, estoque completo e histórico de movimentações.
 - Compartilhamento do PDF quando o navegador/dispositivo oferece suporte; nos demais casos o arquivo é baixado para envio manual.
-- Backup JSON e restauração dos dados.
+- Exportação de backup JSON; a restauração é compatível com o modo local. No banco compartilhado, a importação ainda está desativada.
 - Layout adaptado para computador e celular.
 
 ## Publicar com GitHub Pages
@@ -22,25 +22,49 @@ Aplicação web simples para cadastrar produtos, acompanhar saldo e gerar relat�
 
 O arquivo de entrada é `index.html`; não é necessário instalar dependências ou compilar o projeto.
 
-## Preparar o banco compartilhado (Supabase)
+## Preparar o banco compartilhado (Cloudflare D1)
 
-O script inicial do banco está em [`supabase/schema.sql`](./supabase/schema.sql). Ele cria produtos, membros da equipe e histórico de movimentações, com políticas RLS e uma função transacional para atualizar o saldo junto com o histórico.
+O projeto já inclui uma API para o Cloudflare Workers e um esquema SQL para D1:
 
-1. Crie um projeto no [Supabase](https://supabase.com/dashboard) e guarde a senha do banco em um lugar seguro.
-2. No projeto, abra **SQL Editor → New query**.
-3. Abra o arquivo [`supabase/schema.sql`](./supabase/schema.sql), copie todo o SQL para o editor do Supabase e execute.
-4. Em **Authentication → Users**, crie ou convide a conta do primeiro responsável.
-5. Na lista de usuários, copie o UUID desse usuário. No SQL Editor, registre essa pessoa como administradora, substituindo `UUID-DO-USUARIO` pelo UUID real:
+- API: [`cloudflare/worker.js`](./cloudflare/worker.js)
+- Tabelas: [`cloudflare/schema.sql`](./cloudflare/schema.sql)
+- Configuração: [`wrangler.jsonc`](./wrangler.jsonc)
+- Endereço da API que o site usará: [`api-config.js`](./api-config.js)
 
-   ```sql
-   insert into public.team_members (user_id, role)
-   values ('UUID-DO-USUARIO', 'admin');
-   ```
+### 1. Criar o banco D1
 
-6. Crie as contas dos demais funcionários em Authentication → Users e adicione cada UUID à tabela `public.team_members` com o papel `staff`.
-7. No painel **Connect** do Supabase, copie o **Project URL** e a **publishable key** (ou a chave legada `anon`, se for a exibida pelo projeto). Essas informações públicas são usadas para identificar o projeto; as políticas RLS protegem os dados. **Nunca coloque a secret key ou service_role key no site nem envie essas chaves secretas no chat.**
+1. Crie uma conta no [Cloudflare Dashboard](https://dash.cloudflare.com/).
+2. Abra **Storage & databases → D1 SQL Database** e escolha **Create database**.
+3. Nome sugerido: `estoque-padaria`.
+4. Abra a base criada e use o editor SQL para executar todo o conteúdo de [`cloudflare/schema.sql`](./cloudflare/schema.sql).
 
-**Importante:** este script prepara as tabelas e a proteção no banco, mas o app ainda precisa receber o formulário de login e trocar a leitura/gravação local pela API do Supabase antes de usar esses dados compartilhados. Até essa integração ser concluída, o app atual continua salvando no navegador.
+### 2. Configurar o Worker
+
+1. Copie o **Database ID** exibido na página D1.
+2. No repositório, abra [`wrangler.jsonc`](./wrangler.jsonc) e substitua `SUBSTITUA_PELO_ID_DO_BANCO_D1` pelo ID real. Salve a alteração.
+3. No Cloudflare, abra **Workers & Pages → Create application**, conecte ao GitHub e selecione `nickebel/estoque`. Use a configuração Wrangler existente para publicar o Worker.
+4. Na página do Worker, abra **Settings → Variables and Secrets** e adicione dois **secrets**:
+   - `APP_PASSWORD`: uma senha forte que a equipe usará para entrar no aplicativo.
+   - `SESSION_SECRET`: uma chave aleatória longa e diferente, usada para assinar as sessões.
+5. Salve os secrets e publique/reimplante o Worker se o painel pedir.
+
+Não coloque esses dois valores em arquivos do GitHub nem os envie pelo chat. Esta primeira versão usa **uma senha compartilhada pela equipe**; contas individuais de funcionários podem ser adicionadas em uma próxima etapa.
+
+### 3. Ligar o site à API
+
+1. Depois de publicar, copie o endereço HTTPS do Worker, geralmente terminado em `.workers.dev`.
+2. Abra [`api-config.js`](./api-config.js) e coloque o endereço em `apiBaseUrl`, sem barra no final. Exemplo de formato: `https://nome-do-worker.sua-conta.workers.dev`.
+3. Salve o arquivo no GitHub e aguarde o GitHub Pages atualizar o site.
+4. Abra o app, entre com a senha definida em `APP_PASSWORD` e cadastre um produto de teste. Abra o app em outro dispositivo e entre com a mesma senha: o produto deverá aparecer nos dois.
+
+O Worker só aceita chamadas do site `https://nickebel.github.io` e dos endereços locais de desenvolvimento listados em `cloudflare/worker.js`. Se usar um domínio personalizado depois, será necessário adicionar a origem permitida.
+
+### Avisos
+
+- Os dados passam a vir do banco online quando `api-config.js` contém o endereço do Worker. Enquanto ele estiver vazio, o aplicativo continua no modo local de navegador.
+- A versão atual permite entrar com uma senha comum da equipe. O token de sessão expira após 12 horas.
+- O backup JSON pode ser exportado; a restauração direta de um backup no banco compartilhado ainda está desativada para evitar substituir os dados de toda a equipe acidentalmente.
+- O plano gratuito tem limites e, ao exceder cotas, a API pode parar temporariamente. Acompanhe o consumo no painel Cloudflare.
 
 ## Instalar no celular como aplicativo
 
@@ -64,11 +88,11 @@ Para itens que vêm em caixas ou fardos com embalagens internas, mantenha uma un
 
 ## Limitações importantes
 
-- Os dados ficam no armazenamento local do navegador e dispositivo que está sendo usado. O site publicado pode ser aberto em vários aparelhos, mas **os dados ainda não são compartilhados nem sincronizados entre eles**.
+- Com `api-config.js` configurado, produtos e movimentações são compartilhados entre aparelhos pelo Cloudflare D1. Sem a configuração da API, o app trabalha em modo local e os dados não sincronizam.
 - Faça backups regularmente em **Relatórios e backup**.
 - O gerador de PDF usa jsPDF por CDN, então precisa de conexão com a internet. Se a biblioteca não carregar, tente novamente com internet.
 - O botão de compartilhar usa o menu de compartilhamento do próprio dispositivo quando disponível. Caso contrário, baixa o PDF para você anexá-lo manualmente no WhatsApp ou em outro aplicativo.
-- Esta é uma versão inicial, sem login de funcionários ou banco de dados central. Para a equipe trabalhar com um estoque único em vários dispositivos, a próxima etapa é integrar um banco de dados online e autenticação.
+- O acesso online usa inicialmente uma senha compartilhada pela equipe. Guarde a senha e os secrets do Worker com cuidado; não os publique no repositório.
 
 ## Dados e privacidade
 
