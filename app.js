@@ -2,6 +2,7 @@
 "use strict";
 const STORE="estoquePadaria.v1";
 let products=[], moves=[], toastTimer=null, editingOriginalQty=null;
+let auditState={enabled:false,events:[],message:""};
 const API_BASE=String(window.ESTOQUE_CONFIG&&window.ESTOQUE_CONFIG.apiBaseUrl||"").trim().replace(/\/+$/,"");
 const REMOTE_MODE=Boolean(API_BASE);
 let authToken=localStorage.getItem("estoquePadariaApiToken")||"";
@@ -34,9 +35,14 @@ async function apiRequest(path,options={}){
   return data;
 }
 async function refreshRemote(){
-  const result=await Promise.all([apiRequest("/api/products"),apiRequest("/api/movements")]);
+  const result=await Promise.all([
+    apiRequest("/api/products"),
+    apiRequest("/api/movements"),
+    apiRequest("/api/audit?limit=100").catch(error=>({enabled:false,events:[],message:"Não foi possível carregar a auditoria: "+error.message}))
+  ]);
   products=Array.isArray(result[0])?result[0]:[];
   moves=Array.isArray(result[1])?result[1]:[];
+  auditState=result[2]&&typeof result[2]==="object"?result[2]:{enabled:false,events:[],message:"Resposta de auditoria inválida."};
   render();
 }
 async function initRemote(){
@@ -74,6 +80,17 @@ $("sync-now").addEventListener("click",async()=>{
   try{await refreshRemote();msg("Estoque atualizado.");}
   catch(error){msg(error.message);}
   finally{button.disabled=false;button.textContent="↻ Atualizar";}
+});
+$("refresh-audit").addEventListener("click",async()=>{
+  const button=$("refresh-audit");button.disabled=true;button.textContent="Atualizando…";
+  try{
+    auditState=await apiRequest("/api/audit?limit=100");
+    renderAudit();
+    msg(auditState.enabled?"Auditoria atualizada.":"A auditoria ainda precisa ser ativada no banco.");
+  }catch(error){
+    auditState={enabled:false,events:[],message:"Não foi possível carregar a auditoria: "+error.message};
+    renderAudit();msg(error.message);
+  }finally{button.disabled=false;button.textContent="Atualizar auditoria";}
 });
 $("logout-now").addEventListener("click",()=>{
   authToken="";localStorage.removeItem("estoquePadariaApiToken");
@@ -114,6 +131,44 @@ function showView(v){document.querySelectorAll(".view").forEach(el=>el.classList
 document.querySelectorAll("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));
 document.querySelectorAll("[data-goto]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.goto)));
 $("today").textContent=new Date().toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"short",year:"numeric"});
+function auditActionLabel(action){
+  return ({
+    product_created:"Produto cadastrado",
+    product_updated:"Dados do produto alterados",
+    stock_adjusted:"Ajuste de estoque",
+    product_deleted:"Produto excluído",
+    movement_created:"Movimentação registrada"
+  })[action]||action||"Operação";
+}
+function auditDescription(event){
+  const d=event.details||{};
+  if(event.action==="product_created")return "Saldo inicial: "+num(d.initialQuantity||0)+" "+safe(d.unit||"")+(d.category?" · "+safe(d.category):"");
+  if(event.action==="product_updated"){
+    const labels={name:"nome",category:"categoria",unit:"unidade",min:"estoque mínimo",notes:"observações"};
+    return "Campos alterados: "+(Array.isArray(d.fieldsChanged)?d.fieldsChanged.map(key=>safe(labels[key]||key)).join(", "):"—");
+  }
+  if(event.action==="stock_adjusted")return "Saldo: "+num(d.previousQuantity)+" → "+num(d.newQuantity)+" "+safe(d.unit||"")+" · Motivo: "+safe(d.reason||"—");
+  if(event.action==="movement_created")return (d.type==="entrada"?"Entrada":"Saída")+" de "+num(d.quantity)+" "+safe(d.unit||"")+" · Saldo: "+num(d.previousBalance)+" → "+num(d.balanceAfter)+(d.note?" · "+safe(d.note):"");
+  if(event.action==="product_deleted")return "Excluído com saldo "+num(d.quantityAtDeletion||0)+" "+safe(d.unit||"");
+  return safe(JSON.stringify(d));
+}
+function renderAudit(){
+  const state=auditState||{enabled:false,events:[],message:""};
+  const events=Array.isArray(state.events)?state.events:[];
+  const enabled=REMOTE_MODE&&state.enabled===true;
+  const unavailable=$("audit-unavailable");
+  unavailable.classList.toggle("hidden",enabled);
+  $("audit-table-wrap").classList.toggle("hidden",!enabled||events.length===0);
+  $("audit-empty").classList.toggle("hidden",!enabled||events.length>0);
+  if(!enabled){
+    const reason=state.message||"A auditoria online ainda não foi ativada.";
+    unavailable.textContent=REMOTE_MODE
+      ?reason+" Para ativar, execute cloudflare/migrations/0002_audit_events.sql no Console do D1."
+      :"A auditoria fica disponível quando o aplicativo estiver conectado ao banco online.";
+    return;
+  }
+  $("audit-table").innerHTML=events.map(event=>'<tr><td>'+safe(dateFmt(event.createdAt))+'</td><td><span class="pill">'+safe(auditActionLabel(event.action))+'</span></td><td><strong>'+safe(event.productName||"—")+'</strong></td><td>'+safe(event.actor||"equipe")+'</td><td>'+auditDescription(event)+'</td></tr>').join("");
+}
 function render(){
 $("stat-products").textContent=products.length;
 $("stat-low").textContent=products.filter(p=>Number(p.qty)<=Number(p.min||0)).length;
@@ -128,6 +183,7 @@ $("products-empty").classList.toggle("hidden",filtered.length>0);
 $("m-product").innerHTML='<option value="">Selecione um produto</option>'+products.slice().sort((a,b)=>a.name.localeCompare(b.name,"pt-BR")).map(p=>'<option value="'+safe(p.id)+'">'+safe(p.name)+' ('+safe(qty(p))+')</option>').join("");
 $("movements-table").innerHTML=moves.slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,100).map(m=>'<tr><td>'+safe(dateFmt(m.date))+'</td><td>'+safe(m.name)+'</td><td><span class="pill '+(m.type==="saida"?"low":"")+'">'+(m.type==="saida"?"Saída":"Entrada")+'</span></td><td>'+safe(num(m.qty))+' '+safe(m.unit)+'</td><td>'+safe(num(m.after))+' '+safe(m.unit)+'</td><td>'+safe(m.note||"—")+'</td></tr>').join("");
 $("movements-empty").classList.toggle("hidden",moves.length>0);
+renderAudit();
 }
 function resetForm(){$("product-form").reset();$("product-id").value="";$("p-qty").value="0";$("p-min").value="0";$("p-adjustment-note").value="";editingOriginalQty=null;$("adjustment-note-field").classList.add("hidden");$("p-adjustment-note").required=false;$("product-title").textContent="Cadastrar produto";$("cancel-edit").classList.add("hidden")}
 function updateAdjustmentNoteField(){const changed=Boolean($("product-id").value)&&editingOriginalQty!==null&&Number($("p-qty").value)!==editingOriginalQty;$("adjustment-note-field").classList.toggle("hidden",!changed);$("p-adjustment-note").required=changed;if(!changed)$("p-adjustment-note").value=""}
