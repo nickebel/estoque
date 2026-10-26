@@ -11,6 +11,7 @@ Sistema de gestão de estoque da Panificação Capricho para computador e celula
 - PDF de consulta individual, estoque completo e histórico de movimentações.
 - Compartilhamento do PDF quando o navegador/dispositivo oferece suporte; nos demais casos o arquivo é baixado para envio manual.
 - Exportação de backup JSON; a restauração é compatível com o modo local. No banco compartilhado, a importação ainda está desativada.
+- Trilha de auditoria de cadastros, ajustes, exclusões e movimentações (requer a migração D1 0002 no banco já existente).
 - Layout adaptado para computador e celular.
 
 ## Publicar com GitHub Pages
@@ -37,6 +38,10 @@ O projeto já inclui uma API para o Cloudflare Workers e um esquema SQL para D1:
 2. Abra **Storage & databases → D1 SQL Database** e escolha **Create database**.
 3. Nome sugerido: `estoque-padaria`.
 4. Abra a base criada e use o editor SQL para executar todo o conteúdo de [`cloudflare/schema.sql`](./cloudflare/schema.sql).
+
+### Atualizar um banco D1 que já existe
+
+Se o banco da Capricho já foi criado antes da trilha de auditoria, abra **D1 → estoque-padaria → Console** e execute o conteúdo completo de [cloudflare/migrations/0002_audit_events.sql](./cloudflare/migrations/0002_audit_events.sql). Essa migração apenas cria a tabela e os índices de auditoria; não apaga nem altera produtos ou movimentações existentes. Até ela ser aplicada, o estoque continua operando e a tela de auditoria informa que falta ativar esse recurso.
 
 ### 2. Configurar o Worker
 
@@ -108,7 +113,7 @@ Para itens que vêm em caixas ou fardos com embalagens internas, mantenha uma un
 - Faça backups regularmente em **Relatórios e backup**.
 - O gerador de PDF usa jsPDF por CDN, então precisa de conexão com a internet. Se a biblioteca não carregar, tente novamente com internet.
 - O botão de compartilhar usa o menu de compartilhamento do próprio dispositivo quando disponível. Caso contrário, baixa o PDF para você anexá-lo manualmente no WhatsApp ou em outro aplicativo.
-- O acesso online usa inicialmente uma senha compartilhada pela equipe. Guarde a senha e os secrets do Worker com cuidado; não os publique no repositório.
+- O acesso online usa inicialmente uma senha compartilhada pela equipe. Por isso, os eventos de auditoria identificam o responsável como equipe, não cada funcionário individualmente. Usuários e permissões individuais continuam sendo uma melhoria futura. Guarde a senha e os secrets do Worker com cuidado; não os publique no repositório.
 
 ## Dados e privacidade
 
