@@ -1,4 +1,4 @@
-const CACHE_NAME = "estoque-capricho-v3";
+const CACHE_NAME = "estoque-capricho-v4";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./api-config.js", "./icon-192.png", "./icon-512.png", "./icon.svg", "./apple-touch-icon.png"];
 const absolute = (path) => new URL(path, self.registration.scope).href;
 
