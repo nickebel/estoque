@@ -40,8 +40,8 @@ O projeto já inclui uma API para o Cloudflare Workers e um esquema SQL para D1:
 
 ### 2. Configurar o Worker
 
-1. Copie o **Database ID** exibido na página D1.
-2. No repositório, abra [`wrangler.jsonc`](./wrangler.jsonc) e substitua `SUBSTITUA_PELO_ID_DO_BANCO_D1` pelo ID real. Salve a alteração.
+1. O banco D1 `estoque-padaria` já está criado e suas tabelas já foram aplicadas.
+2. O arquivo [`wrangler.jsonc`](./wrangler.jsonc) já contém o Database ID desse banco. Se recriar o D1 no futuro, atualize esse valor.
 3. No Cloudflare, abra **Workers & Pages → Create application**, conecte ao GitHub e selecione `nickebel/estoque`. Use a configuração Wrangler existente para publicar o Worker.
 4. Confirme que a configuração de build usa a raiz do repositório e que o comando de deploy é `npx wrangler deploy` (o `package.json` já inclui Wrangler). Na página do Worker, abra **Settings → Variables and Secrets** e adicione dois **secrets**:
    - `APP_PASSWORD`: uma senha forte que a equipe usará para entrar no aplicativo.
@@ -52,10 +52,9 @@ Não coloque esses dois valores em arquivos do GitHub nem os envie pelo chat. Es
 
 ### 3. Ligar o site à API
 
-1. Depois de publicar, copie o endereço HTTPS do Worker, geralmente terminado em `.workers.dev`.
-2. Abra [`api-config.js`](./api-config.js) e coloque o endereço em `apiBaseUrl`, sem barra no final. Exemplo de formato: `https://nome-do-worker.sua-conta.workers.dev`.
-3. Salve o arquivo no GitHub e aguarde o GitHub Pages atualizar o site.
-4. Abra o app, entre com a senha definida em `APP_PASSWORD` e cadastre um produto de teste. Abra o app em outro dispositivo e entre com a mesma senha: o produto deverá aparecer nos dois.
+1. O endereço do Worker já está configurado em [`api-config.js`](./api-config.js): `https://estoque-padaria-api.nas20-e16.workers.dev`.
+2. A interface está publicada pelo GitHub Pages, e a API pelo Cloudflare Workers.
+3. Entre com a senha definida no secret `APP_PASSWORD`. Para confirmar a sincronização, cadastre um produto de teste e confira-o em outro aparelho autorizado.
 
 O Worker só aceita chamadas do site `https://nickebel.github.io` e dos endereços locais de desenvolvimento listados em `cloudflare/worker.js`. Se usar um domínio personalizado depois, será necessário adicionar a origem permitida.
 
@@ -113,4 +112,4 @@ Para itens que vêm em caixas ou fardos com embalagens internas, mantenha uma un
 
 ## Dados e privacidade
 
-Os dados do estoque são mantidos no navegador por meio de `localStorage`. Não cadastre informações pessoais desnecessárias. Antes de limpar os dados do navegador, exporte um backup.
+Quando `api-config.js` aponta para o Worker, produtos e movimentações são armazenados no Cloudflare D1 e compartilhados com os dispositivos autorizados. O token de sessão fica no armazenamento local do navegador e expira após 12 horas. Sem a URL da API, o aplicativo entra em modo local e os dados ficam apenas naquele navegador. Não cadastre dados pessoais desnecessários; exporte backups regularmente e guarde-os em local seguro.
