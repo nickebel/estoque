@@ -5,7 +5,7 @@ let products=[], moves=[], toastTimer=null, editingOriginalQty=null;
 let auditState={enabled:false,events:[],message:""};
 const API_BASE=String(window.ESTOQUE_CONFIG&&window.ESTOQUE_CONFIG.apiBaseUrl||"").trim().replace(/\/+$/,"");
 const REMOTE_MODE=Boolean(API_BASE);
-sessionStorage.removeItem("estoquePadariaApiToken");
+localStorage.removeItem("estoquePadariaApiToken");
 let authToken=sessionStorage.getItem("estoquePadariaApiToken")||"";
 
 const $=id=>document.getElementById(id);
