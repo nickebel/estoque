@@ -33,15 +33,18 @@ try {
   const token = login.token;
   const products = await call("/api/products", { token });
   const movements = await call("/api/movements", { token });
-  if (!Array.isArray(products) || !Array.isArray(movements)) {
-    throw new Error("A API respondeu, mas os endpoints não retornaram listas.");
+  const backup = await call("/api/backup", { token });
+  if (!Array.isArray(products) || !Array.isArray(movements) ||
+      !Array.isArray(backup.products) || !Array.isArray(backup.moves)) {
+    throw new Error("A API respondeu, mas um endpoint não retornou a estrutura esperada.");
   }
 
-  console.log("Teste concluído sem alterar dados do estoque.");
+  console.log("Teste concluído sem alterar o estoque.");
   console.log("- API: online");
   console.log("- Login: OK");
   console.log("- Produtos: " + products.length);
-  console.log("- Movimentações recentes: " + movements.length);
+  console.log("- Movimentações recentes na tela: " + movements.length);
+  console.log("- Backup remoto: OK (" + backup.moves.length + " movimentações incluídas)");
 } catch (error) {
   console.error("Falha no teste:", error instanceof Error ? error.message : error);
   process.exitCode = 1;
