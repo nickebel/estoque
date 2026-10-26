@@ -328,8 +328,8 @@ async function route(request, env) {
   if (path === "/api/login" && request.method === "POST") {
     if (!env.APP_PASSWORD || !env.SESSION_SECRET) return json({error:"A configuração do acesso está incompleta."},503);
     const body = await readJson(request);
-    if (typeof body.password !== "string" || body.password.length === 0) {
-      throw new RequestError("Informe a senha de acesso.",400);
+    if (typeof body.password !== "string" || body.password.length === 0 || body.password.length > 128) {
+      throw new RequestError("Informe uma senha válida de até 128 caracteres.",400);
     }
     const accountTablePresent = await usersTableExists(env);
     const usersEnabled = accountTablePresent && await countUsers(env)>0;
@@ -347,6 +347,9 @@ async function route(request, env) {
       let passwordMatches = false;
       if (user && Number(user.active)===1) {
         passwordMatches = await verifyPassword(body.password,user.password_salt,user.password_hash);
+      } else {
+        // Reduce timing differences between unknown, inactive, and active usernames.
+        await passwordHash(body.password,new Uint8Array(16).fill(0x42));
       }
       const rate = await checkLoginRateLimit(request,env,passwordMatches);
       if (!rate.allowed) {
