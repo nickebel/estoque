@@ -404,7 +404,7 @@ async function route(request, env) {
     return json({ok:true});
   }
   if (path === "/api/login" && request.method === "POST") {
-    if (!env.APP_PASSWORD || !env.SESSION_SECRET) return json({error:"A configuração do acesso está incompleta."},503);
+    if (!env.SESSION_SECRET) return json({error:"A configuração da sessão está incompleta."},503);
     const body = await readJson(request);
     if (typeof body.password !== "string" || body.password.length === 0 || body.password.length > 128) {
       throw new RequestError("Informe uma senha válida de até 128 caracteres.",400);
@@ -444,6 +444,7 @@ async function route(request, env) {
         user:{id:user.id,username:user.username,displayName:user.display_name,role:user.role}
       });
     }
+    if (!env.APP_PASSWORD) return json({error:"O login legado está desativado; configure contas individuais."},503);
     const rate = await checkLoginRateLimit(request,env,constantTimeEqual(body.password,env.APP_PASSWORD));
     if (!rate.allowed) {
       const headers = rate.retryAfter ? {"Retry-After":String(rate.retryAfter)} : {};
