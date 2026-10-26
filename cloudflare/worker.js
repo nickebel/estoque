@@ -1,3 +1,4 @@
+// Runtime secrets APP_PASSWORD e SESSION_SECRET são configurados no painel do Worker.
 const SESSION_SECONDS = 12 * 60 * 60;
 const LOGIN_WINDOW_SECONDS = 15 * 60;
 const LOGIN_MAX_ATTEMPTS = 8;
