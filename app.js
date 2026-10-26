@@ -212,8 +212,10 @@ function applyRoleUI(){
   $("movement-form").closest(".panel").classList.toggle("hidden",REMOTE_MODE&&!canWrite);
   const backupCard=$("backup-export-card");
   if(backupCard)backupCard.classList.toggle("hidden",REMOTE_MODE&&!["admin","manager"].includes(role));
-  if(REMOTE_MODE&&currentUser){
-    $("storage-status").textContent="Conectado: "+currentUser.displayName+" · "+({admin:"Administrador",manager:"Gerente",operator:"Operador",viewer:"Consulta"}[role]||"Equipe");
+  if(REMOTE_MODE){
+    $("storage-status").textContent=currentUser
+      ?"Conectado: "+currentUser.displayName+" · "+({admin:"Administrador",manager:"Gerente",operator:"Operador",viewer:"Consulta"}[role]||"Equipe")
+      :"Banco online · sessão não iniciada";
   }
 }
 function dateOrDash(value){return value?dateFmt(value):"Nunca";}
@@ -276,6 +278,16 @@ $("users-table").addEventListener("click",async e=>{
     };
     if(password)body.password=password;
     await apiRequest("/api/users/"+encodeURIComponent(id),{method:"PUT",body});
+    if(password&&id===currentUser?.id){
+      const username=currentUser.username;
+      clearAuthenticatedState();
+      await configureLoginMode();
+      $("login-username").value=username;
+      $("login-password").value="";
+      $("login-error").textContent="Sua senha foi alterada. Entre novamente com a nova senha.";
+      $("login-overlay").classList.remove("hidden");
+      return;
+    }
     await loadUsers();
     msg(password?"Acesso atualizado e senha redefinida.":"Acesso atualizado.");
   }catch(error){msg(error.message)}
