@@ -143,6 +143,15 @@ async function authenticated(request, env) {
     };
   } catch { return null; }
 }
+async function loginLockStatus(request, env) {
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  const ipHash = await sign("estoque-login:" + ip, env.SESSION_SECRET);
+  const old = await env.DB.prepare("SELECT locked_until FROM login_attempts WHERE ip_hash=?").bind(ipHash).first();
+  if (old?.locked_until && Date.parse(old.locked_until) > Date.now()) {
+    return {locked:true,retryAfter:Math.max(1,Math.ceil((Date.parse(old.locked_until)-Date.now())/1000))};
+  }
+  return {locked:false,retryAfter:0};
+}
 async function checkLoginRateLimit(request, env, passwordMatches) {
   const ip = request.headers.get("CF-Connecting-IP") || "unknown";
   const ipHash = await sign("estoque-login:" + ip, env.SESSION_SECRET);
@@ -328,6 +337,8 @@ async function route(request, env) {
         return json({error:"Informe seu usuário e sua senha individual."},400);
       }
       const username = usernameValue(body.username);
+      const lock = await loginLockStatus(request,env);
+      if (lock.locked) return new Response(JSON.stringify({error:"Muitas tentativas. Aguarde antes de tentar novamente."}),{status:429,headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store","Retry-After":String(lock.retryAfter)}});
       const user = await env.DB.prepare("SELECT id,username,display_name,password_salt,password_hash,role,active,session_version FROM users WHERE username=? COLLATE NOCASE").bind(username).first();
       let passwordMatches = false;
       if (user && Number(user.active)===1) {
