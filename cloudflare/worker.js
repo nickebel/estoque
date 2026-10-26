@@ -243,8 +243,13 @@ async function route(request, env) {
     const body = productInput(await readJson(request));
     const old = await env.DB.prepare("SELECT * FROM products WHERE id=?").bind(id).first();
     if (!old) return json({error:"Produto não encontrado."},404);
+    const adjustmentNote = text(body.adjustmentNote,180);
+    const quantityChanged = body.qty !== Number(old.quantity);
+    if (quantityChanged && !adjustmentNote) {
+      throw new RequestError("Informe o motivo do ajuste de estoque.",400);
+    }
     const timestamp = nowIso();
-    if (body.qty === Number(old.quantity)) {
+    if (!quantityChanged) {
       const result = await env.DB.prepare("UPDATE products SET name=?,category=?,unit=?,quantity=?,min_quantity=?,notes=?,updated_at=? WHERE id=? AND quantity=?")
         .bind(body.name,body.category,body.unit,body.qty,body.min,body.notes,timestamp,id,Number(old.quantity)).run();
       if (!result.meta.changes) return json({error:"O estoque mudou em outro aparelho. Atualize a tela e tente novamente."},409);
@@ -255,7 +260,7 @@ async function route(request, env) {
         env.DB.prepare("UPDATE products SET name=?,category=?,unit=?,quantity=?,min_quantity=?,notes=?,updated_at=? WHERE id=? AND quantity=?")
           .bind(body.name,body.category,body.unit,body.qty,body.min,body.notes,timestamp,id,Number(old.quantity)),
         env.DB.prepare("INSERT INTO movements (id,product_id,product_name,unit,movement_type,quantity,balance_after,note,created_by,created_at) SELECT ?,?,?,?,?,?,?,?,?,? WHERE changes()=1")
-          .bind(crypto.randomUUID(),id,body.name,body.unit,type,movementQty,body.qty,"Ajuste feito no cadastro","equipe",timestamp)
+          .bind(crypto.randomUUID(),id,body.name,body.unit,type,movementQty,body.qty,adjustmentNote,"equipe",timestamp)
       ]);
       if (!results[0].meta.changes) return json({error:"O estoque mudou em outro aparelho. Atualize a tela e tente novamente."},409);
     }
