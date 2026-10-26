@@ -5,7 +5,8 @@ let products=[], moves=[], toastTimer=null, editingOriginalQty=null;
 let auditState={enabled:false,events:[],message:""};
 const API_BASE=String(window.ESTOQUE_CONFIG&&window.ESTOQUE_CONFIG.apiBaseUrl||"").trim().replace(/\/+$/,"");
 const REMOTE_MODE=Boolean(API_BASE);
-let authToken=localStorage.getItem("estoquePadariaApiToken")||"";
+sessionStorage.removeItem("estoquePadariaApiToken");
+let authToken=sessionStorage.getItem("estoquePadariaApiToken")||"";
 
 const $=id=>document.getElementById(id);
 const safe=(v)=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -26,7 +27,7 @@ async function apiRequest(path,options={}){
   const data=await response.json().catch(()=>({error:"Resposta inválida da API."}));
   if(!response.ok){
     if(response.status===401&&path!=="/api/login"){
-      authToken="";localStorage.removeItem("estoquePadariaApiToken");
+      authToken="";sessionStorage.removeItem("estoquePadariaApiToken");
       $("login-overlay").classList.remove("hidden");
       $("login-error").textContent="Sua sessão expirou. Entre novamente.";
     }
@@ -66,7 +67,7 @@ async function initRemote(){
       msg("Conectado ao estoque compartilhado.");
       return;
     }catch(error){
-      authToken="";localStorage.removeItem("estoquePadariaApiToken");
+      authToken="";sessionStorage.removeItem("estoquePadariaApiToken");
       $("login-error").textContent=error.message;
     }
   }
@@ -93,7 +94,7 @@ $("refresh-audit").addEventListener("click",async()=>{
   }finally{button.disabled=false;button.textContent="Atualizar auditoria";}
 });
 $("logout-now").addEventListener("click",()=>{
-  authToken="";localStorage.removeItem("estoquePadariaApiToken");
+  authToken="";sessionStorage.removeItem("estoquePadariaApiToken");
   products=[];moves=[];render();
   $("login-password").value="";$("login-error").textContent="";
   $("login-overlay").classList.remove("hidden");
@@ -123,7 +124,7 @@ $("login-form").addEventListener("submit",async e=>{
   try{
     const result=await apiRequest("/api/login",{method:"POST",body:{password:$("login-password").value}});
     authToken=result.token;
-    localStorage.setItem("estoquePadariaApiToken",authToken);
+    sessionStorage.setItem("estoquePadariaApiToken",authToken);
     await refreshRemote();
     $("login-overlay").classList.add("hidden");
     $("login-password").value="";
