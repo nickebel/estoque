@@ -59,6 +59,22 @@ Não coloque esses dois valores em arquivos do GitHub nem os envie pelo chat. Es
 
 O Worker só aceita chamadas do site `https://nickebel.github.io` e dos endereços locais de desenvolvimento listados em `cloudflare/worker.js`. Se usar um domínio personalizado depois, será necessário adicionar a origem permitida.
 
+### Verificação após a publicação
+
+O GitHub Actions valida automaticamente os scripts, o manifesto PWA, o esquema D1 e a configuração Wrangler a cada atualização. A validação pode ser executada localmente com `npm run validate`.
+
+Depois de configurar D1, o Worker e a URL em `api-config.js`, também é possível testar os endpoints sem cadastrar, editar ou apagar produtos:
+
+```powershell
+$env:API_BASE_URL = "https://SEU-WORKER.workers.dev"
+$secure = Read-Host "Senha da equipe" -AsSecureString
+$env:APP_PASSWORD = [System.Net.NetworkCredential]::new("", $secure).Password
+npm run test:smoke
+Remove-Item Env:APP_PASSWORD
+```
+
+Troque `https://SEU-WORKER.workers.dev` pelo endereço real do Worker. O teste verifica a API, o login e a leitura de produtos e movimentações; ele não modifica o estoque.
+
 ### Avisos
 
 - Os dados passam a vir do banco online quando `api-config.js` contém o endereço do Worker. Enquanto ele estiver vazio, o aplicativo continua no modo local de navegador.
