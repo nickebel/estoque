@@ -60,7 +60,7 @@ assert.ok(html.includes('id="logout-now"'));
 assert.ok(html.includes("Content-Security-Policy"), "A interface deve aplicar uma política de segurança de conteúdo.");
 assert.ok(html.includes('id="p-adjustment-note"'), "A interface deve pedir motivo ao ajustar saldo.");
 assert.ok(worker.includes("if (quantityChanged && !adjustmentNote)"), "A API deve rejeitar ajustes de saldo sem motivo.");
-assert.ok(worker.includes("adjustmentNote,"equipe",timestamp"), "O motivo do ajuste deve ser gravado no histórico.");
+assert.ok(worker.includes('adjustmentNote,"equipe",timestamp'), "O motivo do ajuste deve ser gravado no histórico.");
 
 console.log("Validação concluída.");
 console.log("- Scripts JavaScript: OK");
