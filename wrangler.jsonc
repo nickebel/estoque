@@ -7,7 +7,7 @@
     {
       "binding": "DB",
       "database_name": "estoque-padaria",
-      "database_id": "SUBSTITUA_PELO_ID_DO_BANCO_D1"
+      "database_id": "70b9293e-906d-4dc0-9cd6-10792b5f09e1"
     }
   ],
   "secrets": {
