@@ -29,3 +29,12 @@ CREATE TABLE IF NOT EXISTS movements (
 
 CREATE INDEX IF NOT EXISTS movements_date_idx ON movements(created_at DESC);
 CREATE INDEX IF NOT EXISTS movements_product_idx ON movements(product_id);
+
+-- Rate limiting for the shared-password login. Only a keyed hash of the
+-- Cloudflare client IP is stored; raw IP addresses are not persisted.
+CREATE TABLE IF NOT EXISTS login_attempts (
+  ip_hash TEXT PRIMARY KEY NOT NULL,
+  failed_count INTEGER NOT NULL DEFAULT 0 CHECK (failed_count >= 0),
+  window_started_at TEXT NOT NULL,
+  locked_until TEXT
+);
