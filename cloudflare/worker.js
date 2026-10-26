@@ -144,7 +144,7 @@ async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, "") || "/";
   if (request.method === "OPTIONS") return new Response(null, {status:204});
-  if (path === "/api/health" && request.method === "GET") return json({ok:true,service:"estoque-padaria-api"});
+  if (path === "/api/health" && request.method === "GET") return json({ok:true,service:"estoque-padaria-api",runtimeSecretsConfigured:Boolean(env.APP_PASSWORD && env.SESSION_SECRET)});
   if (path === "/api/login" && request.method === "POST") {
     if (!env.APP_PASSWORD || !env.SESSION_SECRET) return json({error:"Faltam configurar os segredos APP_PASSWORD e SESSION_SECRET no Cloudflare."},503);
     const body = await readJson(request);
