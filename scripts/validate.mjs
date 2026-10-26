@@ -66,6 +66,8 @@ assert.ok(worker.includes('path === "/api/login"'));
 assert.ok(worker.includes('path === "/api/products"'));
 assert.ok(worker.includes('path === "/api/movements"'));
 assert.ok(worker.includes('path === "/api/backup"'));
+assert.ok(worker.includes("auditEventsTruncated"));
+assert.ok(worker.includes('"SELECT id,action,product_id,product_name,actor,details_json,created_at FROM audit_events ORDER BY created_at DESC LIMIT 10000"'));
 assert.ok(worker.includes('path === "/api/audit"'));
 assert.ok(worker.includes("async function auditTableExists(env)"));
 assert.ok(worker.includes('action:"stock_adjusted"'));
