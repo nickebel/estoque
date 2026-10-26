@@ -249,9 +249,88 @@ function mapProduct(row) {
   return {id:row.id,name:row.name,category:row.category,unit:row.unit,qty:Number(row.quantity),min:Number(row.min_quantity),notes:row.notes};
 }
 function mapMovement(row) {
-  return {id:row.id,date:row.created_at,productId:row.product_id,name:row.product_name,unit:row.unit,type:row.movement_type,qty:Number(row.quantity),after:Number(row.balance_after),note:row.note};
+  return {id:row.id,date:row.created_at,productId:row.product_id,name:row.product_name,unit:row.unit,type:row.movement_type,qty:Number(row.quantity),after:Number(row.balance_after),note:row.note,createdBy:row.created_by};
 }
 function nowIso() { return new Date().toISOString(); }
+
+async function purgeExpiredBackups(bucket, nowMs = Date.now()) {
+  const cutoff = nowMs - 30 * 24 * 60 * 60 * 1000;
+  const expiredKeys = [];
+  let cursor;
+  do {
+    const page = await bucket.list({prefix:"daily/",limit:1000,...(cursor?{cursor}:{})});
+    for (const object of page.objects || []) {
+      const uploadedMs = new Date(object.uploaded).getTime();
+      if (Number.isFinite(uploadedMs) && uploadedMs < cutoff) expiredKeys.push(object.key);
+    }
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+
+  for (let offset=0; offset<expiredKeys.length; offset+=1000) {
+    await bucket.delete(expiredKeys.slice(offset,offset+1000));
+  }
+  return expiredKeys.length;
+}
+
+async function createScheduledBackup(env, scheduledTime = Date.now()) {
+  if (!env.BACKUPS || typeof env.BACKUPS.put !== "function" || typeof env.BACKUPS.list !== "function") {
+    throw new Error("A ligação R2 BACKUPS ainda não está configurada.");
+  }
+  const [productRows,movementRows,auditRows] = await Promise.all([
+    env.DB.prepare("SELECT * FROM products ORDER BY name COLLATE NOCASE").all(),
+    env.DB.prepare("SELECT * FROM movements ORDER BY created_at ASC").all(),
+    auditTableExists(env)
+      ? env.DB.prepare("SELECT id,action,product_id,product_name,actor,details_json,created_at FROM audit_events ORDER BY created_at ASC").all()
+      : Promise.resolve({results:[]})
+  ]);
+  const auditEvents = (auditRows.results || []).map(row => {
+    let details = {};
+    try { details = JSON.parse(row.details_json || "{}"); } catch {}
+    return {
+      id:row.id,action:row.action,productId:row.product_id,productName:row.product_name,
+      actor:row.actor,details,createdAt:row.created_at
+    };
+  });
+  const exportedAt = new Date(scheduledTime).toISOString();
+  const compact = exportedAt.replace(/[:.]/g,"-");
+  const key = "daily/" + exportedAt.slice(0,10) + "/estoque-padaria-" + compact + ".json";
+  const snapshot = {
+    backupFormat:"capricho-stock-backup",
+    schemaVersion:1,
+    exportedAt,
+    source:"Cloudflare D1",
+    products:productRows.results.map(mapProduct),
+    moves:movementRows.results.map(mapMovement),
+    auditEvents,
+    auditEnabled:await auditTableExists(env),
+    recordCounts:{
+      products:productRows.results.length,
+      movements:movementRows.results.length,
+      auditEvents:auditEvents.length
+    }
+  };
+  const body = JSON.stringify(snapshot);
+  await env.BACKUPS.put(key,body,{
+    httpMetadata:{contentType:"application/json",cacheControl:"private, no-store"},
+    customMetadata:{
+      schemaVersion:"1",
+      exportedAt,
+      productCount:String(snapshot.recordCounts.products),
+      movementCount:String(snapshot.recordCounts.movements),
+      auditEventCount:String(snapshot.recordCounts.auditEvents)
+    }
+  });
+  const removed = await purgeExpiredBackups(env.BACKUPS,scheduledTime);
+  console.log(JSON.stringify({
+    event:"stock_backup_completed",
+    key,
+    bytes:encoder.encode(body).byteLength,
+    recordCounts:snapshot.recordCounts,
+    expiredBackupsRemoved:removed,
+    retentionDays:30
+  }));
+  return {key,exportedAt,recordCounts:snapshot.recordCounts,expiredBackupsRemoved:removed};
+}
 
 async function auditTableExists(env) {
   const row = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='audit_events'").first();
@@ -655,5 +734,9 @@ export default {
       const message = status === 500 ? "Erro interno do servidor. Confira a configuração da API e do banco." : error.message;
       return withCors(json({error:message},status),request);
     }
+  },
+  async scheduled(controller, env) {
+    const result = await createScheduledBackup(env,controller.scheduledTime || Date.now());
+    return result;
   }
 };
