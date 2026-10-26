@@ -3,7 +3,6 @@
 const STORE="estoquePadaria.v1";
 let products=[], moves=[], toastTimer=null, editingOriginalQty=null;
 let auditState={enabled:false,events:[],message:""};
-let currentUser=null, accountsStatus={accountsEnabled:false,setupRequired:false}, usersList=[];
 const API_BASE=String(window.ESTOQUE_CONFIG&&window.ESTOQUE_CONFIG.apiBaseUrl||"").trim().replace(/\/+$/,"");
 const REMOTE_MODE=Boolean(API_BASE);
 localStorage.removeItem("estoquePadariaApiToken");
@@ -18,17 +17,6 @@ function load(){try{const d=JSON.parse(localStorage.getItem(STORE)||"{}");produc
 function save(){if(!REMOTE_MODE)localStorage.setItem(STORE,JSON.stringify({products,moves}));render()}
 
 function msg(s){const t=$("toast");t.textContent=s;t.classList.remove("hidden");clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.add("hidden"),3200)}
-function clearAuthenticatedState(){
-  authToken="";
-  sessionStorage.removeItem("estoquePadariaApiToken");
-  currentUser=null;
-  products=[];
-  moves=[];
-  usersList=[];
-  auditState={enabled:false,events:[],message:""};
-  applyRoleUI();
-  render();
-}
 async function apiRequest(path,options={}){
   if(!API_BASE)throw new Error("O endereço do banco online ainda não foi configurado.");
   const headers={"Accept":"application/json"};
@@ -39,9 +27,9 @@ async function apiRequest(path,options={}){
   const data=await response.json().catch(()=>({error:"Resposta inválida da API."}));
   if(!response.ok){
     if(response.status===401&&path!=="/api/login"){
-      clearAuthenticatedState();
+      authToken="";sessionStorage.removeItem("estoquePadariaApiToken");
       $("login-overlay").classList.remove("hidden");
-      $("login-error").textContent="Sua sessão expirou ou foi revogada. Entre novamente.";
+      $("login-error").textContent="Sua sessão expirou. Entre novamente.";
     }
     throw new Error(data.error||"Não foi possível acessar o banco online.");
   }
@@ -51,41 +39,19 @@ async function refreshRemote(){
   const result=await Promise.all([
     apiRequest("/api/products"),
     apiRequest("/api/movements"),
-    apiRequest("/api/audit?limit=100").catch(error=>({enabled:false,events:[],message:error.message})),
-    apiRequest("/api/me")
+    apiRequest("/api/audit?limit=100").catch(error=>({enabled:false,events:[],message:"Não foi possível carregar a auditoria: "+error.message}))
   ]);
   products=Array.isArray(result[0])?result[0]:[];
   moves=Array.isArray(result[1])?result[1]:[];
   auditState=result[2]&&typeof result[2]==="object"?result[2]:{enabled:false,events:[],message:"Resposta de auditoria inválida."};
-  currentUser=result[3]?.user||null;
-  applyRoleUI();
   render();
-}
-async function configureLoginMode(){
-  try{accountsStatus=await apiRequest("/api/auth/status");}
-  catch{accountsStatus={accountsEnabled:false,setupRequired:false};}
-  const needsSetup=Boolean(accountsStatus.accountsEnabled&&accountsStatus.setupRequired);
-  $("login-form").classList.toggle("hidden",needsSetup);
-  $("bootstrap-admin-form").classList.toggle("hidden",!needsSetup);
-  $("login-username-field").classList.toggle("hidden",!accountsStatus.accountsEnabled||needsSetup);
-  $("login-username").required=Boolean(accountsStatus.accountsEnabled&&!needsSetup);
-  const passwordLabel=document.querySelector('label[for="login-password"]');
-  if(passwordLabel)passwordLabel.textContent=accountsStatus.accountsEnabled?"Senha individual":"Senha de acesso";
-  $("login-description").textContent=accountsStatus.accountsEnabled
-    ?"Entre com seu usuário e sua senha individual para acessar o estoque da Capricho."
-    :"Acesse com a senha da equipe para consultar o estoque compartilhado da Panificação Capricho.";
-  if(needsSetup){
-    authToken="";
-    sessionStorage.removeItem("estoquePadariaApiToken");
-  }
 }
 async function initRemote(){
   if(!REMOTE_MODE){$("storage-status").textContent="Modo local · dispositivo único";$("data-notice").textContent="O modo local mantém os dados apenas neste navegador. Para operar com a equipe, ative a conexão com o banco compartilhado.";return}
   $("backup-restore-card").classList.add("hidden");
   enableRemoteActions();
-  applyRoleUI();
-  $("storage-status").textContent="Banco online · acesso protegido";
-  $("data-notice").textContent="Produtos e movimentações são compartilhados entre dispositivos autorizados. Exporte backups regularmente e guarde-os em local seguro.";
+  $("storage-status").textContent="Banco online · sincronizado";
+  $("data-notice").textContent="Produtos e movimentações são compartilhados entre os dispositivos autorizados. Exporte backups regularmente e guarde-os em local seguro.";
   try {
     const localCopy=JSON.parse(localStorage.getItem(STORE)||"{}");
     const count=Array.isArray(localCopy.products)?localCopy.products.length:0;
@@ -93,9 +59,8 @@ async function initRemote(){
     if(count>0){warning.textContent="Este aparelho ainda tem "+count+" produto(s) salvos localmente. Eles não serão enviados ao banco automaticamente. Exporte um backup antes de migrar o estoque.";warning.classList.remove("hidden");}
     else warning.classList.add("hidden");
   } catch {}
-  await configureLoginMode();
   $("login-overlay").classList.remove("hidden");
-  if(authToken&&!accountsStatus.setupRequired){
+  if(authToken){
     try{
       await refreshRemote();
       $("login-overlay").classList.add("hidden");
@@ -106,9 +71,7 @@ async function initRemote(){
       $("login-error").textContent=error.message;
     }
   }
-  if(accountsStatus.setupRequired)$("bootstrap-current-password").focus();
-  else if(accountsStatus.accountsEnabled)$("login-username").focus();
-  else $("login-password").focus();
+  $("login-password").focus();
 }
 function enableRemoteActions(){
   if(REMOTE_MODE)$("remote-actions").classList.remove("hidden");
@@ -131,12 +94,9 @@ $("refresh-audit").addEventListener("click",async()=>{
   }finally{button.disabled=false;button.textContent="Atualizar auditoria";}
 });
 $("logout-now").addEventListener("click",()=>{
-  clearAuthenticatedState();
-  $("login-password").value="";$("login-username").value="";$("login-error").textContent="";
-  $("login-password").type="password";
-  $("toggle-password-label").textContent="Mostrar";
-  $("toggle-password").setAttribute("aria-label","Mostrar senha");
-  $("toggle-password").setAttribute("aria-pressed","false");
+  authToken="";sessionStorage.removeItem("estoquePadariaApiToken");
+  products=[];moves=[];render();
+  $("login-password").value="";$("login-error").textContent="";
   $("login-overlay").classList.remove("hidden");
   msg("Sessão encerrada neste dispositivo.");
 });
@@ -162,9 +122,7 @@ $("login-form").addEventListener("submit",async e=>{
   const submit=$("login-submit"),error=$("login-error");
   submit.disabled=true;submit.textContent="Conectando…";error.textContent="";
   try{
-    const body={password:$("login-password").value};
-    if(accountsStatus.accountsEnabled)body.username=$("login-username").value.trim();
-    const result=await apiRequest("/api/login",{method:"POST",body});
+    const result=await apiRequest("/api/login",{method:"POST",body:{password:$("login-password").value}});
     authToken=result.token;
     sessionStorage.setItem("estoquePadariaApiToken",authToken);
     await refreshRemote();
@@ -174,129 +132,15 @@ $("login-form").addEventListener("submit",async e=>{
     $("toggle-password-label").textContent="Mostrar";
     $("toggle-password").setAttribute("aria-label","Mostrar senha");
     $("toggle-password").setAttribute("aria-pressed","false");
-    $("login-username").value="";
     msg("Conectado ao estoque compartilhado.");
   }catch(err){error.textContent=err.message||"Falha ao entrar. Tente novamente."}
   finally{submit.disabled=false;submit.textContent="Acessar estoque"}
 });
-$("bootstrap-admin-form").addEventListener("submit",async e=>{
-  e.preventDefault();
-  const button=$("bootstrap-submit"),error=$("bootstrap-error");
-  button.disabled=true;button.textContent="Configurando…";error.textContent="";
-  try{
-    const username=$("bootstrap-username").value.trim().toLowerCase();
-    await apiRequest("/api/users/bootstrap",{method:"POST",body:{
-      currentPassword:$("bootstrap-current-password").value,
-      username,
-      displayName:$("bootstrap-display-name").value.trim(),
-      password:$("bootstrap-password").value
-    }});
-    $("bootstrap-current-password").value="";
-    $("bootstrap-password").value="";
-    await configureLoginMode();
-    $("login-username").value=username;
-    $("login-error").textContent="Administrador criado. Entre com o usuário e a nova senha individual.";
-    $("login-password").focus();
-  }catch(err){error.textContent=err.message||"Não foi possível configurar o administrador."}
-  finally{button.disabled=false;button.textContent="Criar administrador"}
-});
 
-
-function applyRoleUI(){
-  const role=currentUser?.role||(REMOTE_MODE?"viewer":"admin");
-  const individual=Boolean(currentUser&&!currentUser.legacy);
-  const admin=individual&&role==="admin";
-  $("nav-users").classList.toggle("hidden",!admin);
-  const canWrite=["admin","manager","operator"].includes(role);
-  $("product-form").closest(".panel").classList.toggle("hidden",REMOTE_MODE&&!canWrite);
-  $("movement-form").closest(".panel").classList.toggle("hidden",REMOTE_MODE&&!canWrite);
-  const backupCard=$("backup-export-card");
-  if(backupCard)backupCard.classList.toggle("hidden",REMOTE_MODE&&!["admin","manager"].includes(role));
-  if(REMOTE_MODE){
-    $("storage-status").textContent=currentUser
-      ?"Conectado: "+currentUser.displayName+" · "+({admin:"Administrador",manager:"Gerente",operator:"Operador",viewer:"Consulta"}[role]||"Equipe")
-      :"Banco online · sessão não iniciada";
-  }
-}
-function dateOrDash(value){return value?dateFmt(value):"Nunca";}
-const userRoleOptions=[["admin","Administrador"],["manager","Gerente"],["operator","Operador"],["viewer","Consulta"]];
-function renderUsers(){
-  $("users-count").textContent=usersList.length+" usuário(s)";
-  $("users-empty").classList.toggle("hidden",usersList.length>0);
-  $("users-table").innerHTML=usersList.map(user=>{
-    const roleOptions=userRoleOptions.map(([value,label])=>'<option value="'+value+'"'+(user.role===value?" selected":"")+'>'+label+'</option>').join("");
-    return '<tr data-user-row="'+safe(user.id)+'"><td><strong>'+safe(user.username)+'</strong></td>'+
-      '<td><input data-user-name maxlength="80" aria-label="Nome exibido" value="'+safe(user.displayName)+'"></td>'+
-      '<td><select data-user-role aria-label="Perfil">'+roleOptions+'</select></td>'+
-      '<td><select data-user-active aria-label="Status"><option value="true"'+(user.active?" selected":"")+'>Ativo</option><option value="false"'+(!user.active?" selected":"")+'>Inativo</option></select></td>'+
-      '<td>'+safe(dateOrDash(user.lastLoginAt))+'</td>'+
-      '<td><input data-user-password type="password" autocomplete="new-password" minlength="12" maxlength="128" placeholder="Deixe vazio para manter" aria-label="Nova senha"></td>'+
-      '<td><button class="btn small primary" data-user-save type="button">Salvar</button></td></tr>';
-  }).join("");
-}
-async function loadUsers(){
-  const rows=await apiRequest("/api/users");
-  usersList=Array.isArray(rows)?rows:[];
-  renderUsers();
-}
-$("refresh-users").addEventListener("click",async()=>{
-  const button=$("refresh-users");button.disabled=true;
-  try{await loadUsers();msg("Lista de acessos atualizada.");}
-  catch(error){msg(error.message)}
-  finally{button.disabled=false}
-});
-$("user-create-form").addEventListener("submit",async e=>{
-  e.preventDefault();
-  const button=$("user-create-submit"),error=$("user-create-error");
-  button.disabled=true;button.textContent="Criando…";error.textContent="";
-  try{
-    await apiRequest("/api/users",{method:"POST",body:{
-      username:$("new-user-username").value.trim(),
-      displayName:$("new-user-name").value.trim(),
-      password:$("new-user-password").value,
-      role:$("new-user-role").value
-    }});
-    $("user-create-form").reset();
-    await loadUsers();
-    msg("Usuário criado. Entregue a senha individual por um canal seguro.");
-  }catch(err){error.textContent=err.message||"Não foi possível criar o usuário."}
-  finally{button.disabled=false;button.textContent="Criar usuário"}
-});
-$("users-table").addEventListener("click",async e=>{
-  const button=e.target.closest("[data-user-save]");
-  if(!button)return;
-  const row=button.closest("[data-user-row]");
-  const id=row?.dataset.userRow;
-  if(!id)return;
-  button.disabled=true;button.textContent="Salvando…";
-  try{
-    const password=row.querySelector("[data-user-password]").value;
-    const body={
-      displayName:row.querySelector("[data-user-name]").value.trim(),
-      role:row.querySelector("[data-user-role]").value,
-      active:row.querySelector("[data-user-active]").value==="true"
-    };
-    if(password)body.password=password;
-    await apiRequest("/api/users/"+encodeURIComponent(id),{method:"PUT",body});
-    if(password&&id===currentUser?.id){
-      const username=currentUser.username;
-      clearAuthenticatedState();
-      await configureLoginMode();
-      $("login-username").value=username;
-      $("login-password").value="";
-      $("login-error").textContent="Sua senha foi alterada. Entre novamente com a nova senha.";
-      $("login-overlay").classList.remove("hidden");
-      return;
-    }
-    await loadUsers();
-    msg(password?"Acesso atualizado e senha redefinida.":"Acesso atualizado.");
-  }catch(error){msg(error.message)}
-  finally{button.disabled=false;button.textContent="Salvar"}
-});
 function status(p){if(Number(p.qty)<=0)return '<span class="pill zero">Sem estoque</span>';if(Number(p.qty)<=Number(p.min||0))return '<span class="pill low">Estoque baixo</span>';return '<span class="pill">Disponível</span>'}
 function qty(p){return num(p.qty)+" "+p.unit}
 function findProducts(query){const q=norm(query);return products.filter(p=>norm(p.name+" "+p.category+" "+p.notes).includes(q))}
-function showView(v){document.querySelectorAll(".view").forEach(el=>el.classList.toggle("active",el.id==="view-"+v));document.querySelectorAll("[data-view]").forEach(el=>el.classList.toggle("active",el.dataset.view===v));$("crumb").textContent=({inicio:"Visão geral",produtos:"Produtos",movimentacoes:"Movimentações",relatorios:"Relatórios e backup",acessos:"Acessos da equipe"})[v]||"Visão geral";if(v==="acessos"&&currentUser?.role==="admin"&&!currentUser.legacy)loadUsers().catch(error=>msg(error.message));window.scrollTo({top:0,behavior:"smooth"})}
+function showView(v){document.querySelectorAll(".view").forEach(el=>el.classList.toggle("active",el.id==="view-"+v));document.querySelectorAll("[data-view]").forEach(el=>el.classList.toggle("active",el.dataset.view===v));$("crumb").textContent=({inicio:"Visão geral",produtos:"Produtos",movimentacoes:"Movimentações",relatorios:"Relatórios e backup"})[v]||"Visão geral";window.scrollTo({top:0,behavior:"smooth"})}
 document.querySelectorAll("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));
 document.querySelectorAll("[data-goto]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.goto)));
 $("today").textContent=new Date().toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"short",year:"numeric"});
@@ -349,9 +193,6 @@ const f=norm($("product-filter").value);
 const filtered=products.filter(p=>norm(p.name+" "+p.category).includes(f)).sort((a,b)=>a.name.localeCompare(b.name,"pt-BR"));
 $("products-table").innerHTML=filtered.map(p=>'<tr><td><strong>'+safe(p.name)+'</strong><div class="subline">'+safe(p.notes)+'</div></td><td>'+safe(p.category||"—")+'</td><td>'+safe(qty(p))+'</td><td>'+num(p.min||0)+' '+safe(p.unit)+'</td><td>'+status(p)+'</td><td><button class="btn small" data-edit="'+safe(p.id)+'">Editar</button> <button class="btn small danger" data-delete="'+safe(p.id)+'">Excluir</button></td></tr>').join("");
 $("products-empty").classList.toggle("hidden",filtered.length>0);
-const roleForActions=currentUser?.role||(REMOTE_MODE?"viewer":"admin");
-document.querySelectorAll("#products-table [data-edit]").forEach(button=>button.classList.toggle("hidden",REMOTE_MODE&&!["admin","manager","operator"].includes(roleForActions)));
-document.querySelectorAll("#products-table [data-delete]").forEach(button=>button.classList.toggle("hidden",REMOTE_MODE&&roleForActions!=="admin"));
 $("m-product").innerHTML='<option value="">Selecione um produto</option>'+products.slice().sort((a,b)=>a.name.localeCompare(b.name,"pt-BR")).map(p=>'<option value="'+safe(p.id)+'">'+safe(p.name)+' ('+safe(qty(p))+')</option>').join("");
 $("movements-table").innerHTML=moves.slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,100).map(m=>'<tr><td>'+safe(dateFmt(m.date))+'</td><td>'+safe(m.name)+'</td><td><span class="pill '+(m.type==="saida"?"low":"")+'">'+(m.type==="saida"?"Saída":"Entrada")+'</span></td><td>'+safe(num(m.qty))+' '+safe(m.unit)+'</td><td>'+safe(num(m.after))+' '+safe(m.unit)+'</td><td>'+safe(m.note||"—")+'</td></tr>').join("");
 $("movements-empty").classList.toggle("hidden",moves.length>0);

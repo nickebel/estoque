@@ -3,14 +3,13 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 
 const read = (path) => readFile(new URL("../" + path, import.meta.url), "utf8");
-const [html, worker, serviceWorker, schema, auditMigration, userMigration, manifestText, configText, packageText, apiConfig, appJs, installJs] =
+const [html, worker, serviceWorker, schema, auditMigration, manifestText, configText, packageText, apiConfig, appJs, installJs] =
   await Promise.all([
     read("index.html"),
     read("cloudflare/worker.js"),
     read("sw.js"),
     read("cloudflare/schema.sql"),
     read("cloudflare/migrations/0002_audit_events.sql"),
-    read("cloudflare/migrations/0003_user_accounts.sql"),
     read("manifest.webmanifest"),
     read("wrangler.jsonc"),
     read("package.json"),
@@ -62,33 +61,8 @@ assert.ok(schema.includes("CREATE TABLE IF NOT EXISTS movements"));
 assert.ok(schema.includes("CREATE TABLE IF NOT EXISTS login_attempts"));
 assert.ok(schema.includes("CREATE TABLE IF NOT EXISTS audit_events"));
 assert.ok(auditMigration.includes("CREATE TABLE IF NOT EXISTS audit_events"));
-assert.ok(userMigration.includes("CREATE TABLE IF NOT EXISTS users"));
-assert.ok(userMigration.includes("session_version"));
-assert.ok(worker.includes("PASSWORD_HASH_ITERATIONS = 310000"));
-assert.ok(worker.includes("async function passwordHash("));
-assert.ok(worker.includes('path === "/api/auth/status"'));
-assert.ok(worker.includes('path === "/api/users/bootstrap"'));
-assert.ok(worker.includes("setupRequired:totalUsers===0"), "O formulário de bootstrap só deve aparecer antes de existir usuário.");
-assert.ok(worker.includes("if (totalUsers>0) return json({error:\"A configuração inicial só pode ser feita uma vez."), "A senha compartilhada não deve permitir recriar administrador após a configuração inicial.");
-assert.ok(worker.includes('path === "/api/users" && request.method === "POST"'));
-assert.ok(worker.includes("Seu perfil não permite cadastrar produtos."));
-assert.ok(worker.includes("session_version=session_version+?"));
-assert.ok(worker.includes("async function createScheduledBackup(env, scheduledTime = Date.now())"));
-assert.ok(worker.includes("async function purgeExpiredBackups(bucket, nowMs = Date.now())"));
-assert.ok(worker.includes("30 * 24 * 60 * 60 * 1000"), "O backup R2 deve aplicar retenção de 30 dias.");
-assert.ok(worker.includes("async scheduled(controller, env)"), "O Worker precisa exportar o handler do agendamento.");
-assert.ok(worker.includes("env.BACKUPS.put(key,body"), "Snapshots diários devem ser gravados em R2.");
-assert.ok(html.includes('id="bootstrap-admin-form"'));
-assert.ok(html.includes('id="user-create-form"'));
-assert.ok(html.includes('id="users-table"'));
-assert.ok(appJs.includes('apiRequest("/api/users/bootstrap"'));
-assert.ok(appJs.includes('apiRequest("/api/me")'));
-assert.ok(appJs.includes('apiRequest("/api/users/"+encodeURIComponent(id)'));
-assert.ok(appJs.includes('sessionStorage.setItem("estoquePadariaApiToken",authToken)'));
 assert.ok(auditMigration.includes("CREATE INDEX IF NOT EXISTS audit_events_date_idx"));
 assert.ok(worker.includes('path === "/api/login"'));
-assert.ok(worker.includes('if (!env.SESSION_SECRET) return json({error:"A configuração da sessão está incompleta."},503);'));
-assert.ok(worker.includes('if (!env.APP_PASSWORD) return json({error:"O login legado está desativado; configure contas individuais."},503);'));
 assert.ok(worker.includes('path === "/api/products"'));
 assert.ok(worker.includes('path === "/api/movements"'));
 assert.ok(worker.includes('path === "/api/backup"'));
@@ -116,7 +90,7 @@ assert.ok(html.includes("Content-Security-Policy"), "A interface deve aplicar um
 assert.ok(html.includes('id="p-adjustment-note"'), "A interface deve pedir motivo ao ajustar saldo.");
 assert.ok(worker.includes("if (quantityChanged && !adjustmentNote)"), "A API deve rejeitar ajustes de saldo sem motivo.");
 assert.ok(serviceWorker.includes('"./app.js"') && serviceWorker.includes('"./install.js"'), "O cache PWA deve incluir os scripts separados.");
-assert.ok(worker.includes('adjustmentNote,session.username,timestamp'), "O motivo do ajuste deve ser gravado no histórico e associado ao usuário.");
+assert.ok(worker.includes('adjustmentNote,"equipe",timestamp'), "O motivo do ajuste deve ser gravado no histórico.");
 
 console.log("Validação concluída.");
 console.log("- Scripts JavaScript: OK");
