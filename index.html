@@ -234,8 +234,6 @@ if(REMOTE_MODE){msg("A restauração de backup no banco online ainda não está 
 try{const d=JSON.parse(await file.text());if(!Array.isArray(d.products)||!Array.isArray(d.moves))throw new Error("Formato inválido");if(!confirm("A importação substituirá os dados atuais deste navegador. Continuar?"))return;products=d.products;moves=d.moves;save();resetForm();msg("Backup restaurado.")}catch(err){msg("Não foi possível ler o backup. Escolha um JSON exportado pelo aplicativo.")}finally{e.target.value=""}});
 load();render();initRemote();
 })();
-
-})();
 </script>
 
 <script>
