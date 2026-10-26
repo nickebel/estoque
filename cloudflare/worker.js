@@ -526,7 +526,7 @@ async function route(request, env) {
             previousQuantity:Number(old.quantity),newQuantity:body.qty,unit:body.unit,
             reason:adjustmentNote,fieldsChanged
           },
-          createdAt:timestamp
+          createdAt:timestamp,actor:session.username
         }));
       }
       const results = await env.DB.batch(statements);
