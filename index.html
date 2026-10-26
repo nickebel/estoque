@@ -48,6 +48,7 @@
 <div class="field"><label for="p-unit">Unidade de controle <span>*</span></label><input id="p-unit" list="units" maxlength="25" placeholder="Ex.: fardos, caixas, kg" required><datalist id="units"><option value="unidades"><option value="pacotes"><option value="caixas"><option value="fardos"><option value="sacos"><option value="latas"><option value="garrafas"><option value="rolos"><option value="bandejas"><option value="potes"><option value="dúzias"><option value="kg"><option value="g"><option value="L"><option value="ml"></datalist></div>
 <div class="field"><label for="p-qty">Quantidade atual <span>*</span></label><input id="p-qty" type="number" min="0" step="0.01" value="0" required></div>
 <div class="field"><label for="p-min">Avisar quando chegar a</label><input id="p-min" type="number" min="0" step="0.01" value="0"><small>Use 0 para destacar apenas quando zerar.</small></div>
+<div class="field wide hidden" id="adjustment-note-field"><label for="p-adjustment-note">Motivo do ajuste de estoque <span>*</span></label><input id="p-adjustment-note" maxlength="180" placeholder="Ex.: contagem física, perda ou correção de lançamento"><small>Obrigatório ao alterar a quantidade diretamente no cadastro.</small></div>
 <div class="field wide"><label for="p-notes">Observação (opcional)</label><input id="p-notes" maxlength="180" placeholder="Ex.: caixa com 12 unidades; marca ou tamanho"></div>
 </div><div class="actions"><button id="cancel-edit" type="button" class="btn hidden">Cancelar edição</button><button class="btn primary" type="submit">Salvar produto</button></div></form></section>
 <section class="panel"><div class="panel-head"><div><h2>Lista de produtos</h2><p id="products-count">0 produtos cadastrados</p></div><div class="toolbar"><input id="product-filter" type="search" placeholder="Buscar produto…" aria-label="Buscar produto"></div></div>
@@ -84,7 +85,7 @@
 (function(){
 "use strict";
 const STORE="estoquePadaria.v1";
-let products=[], moves=[], toastTimer=null;
+let products=[], moves=[], toastTimer=null, editingOriginalQty=null;
 const API_BASE=String(window.ESTOQUE_CONFIG&&window.ESTOQUE_CONFIG.apiBaseUrl||"").trim().replace(/\/+$/,"");
 const REMOTE_MODE=Boolean(API_BASE);
 let authToken=localStorage.getItem("estoquePadariaApiToken")||"";
@@ -212,29 +213,34 @@ $("m-product").innerHTML='<option value="">Selecione um produto</option>'+produc
 $("movements-table").innerHTML=moves.slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,100).map(m=>'<tr><td>'+safe(dateFmt(m.date))+'</td><td>'+safe(m.name)+'</td><td><span class="pill '+(m.type==="saida"?"low":"")+'">'+(m.type==="saida"?"Saída":"Entrada")+'</span></td><td>'+safe(num(m.qty))+' '+safe(m.unit)+'</td><td>'+safe(num(m.after))+' '+safe(m.unit)+'</td><td>'+safe(m.note||"—")+'</td></tr>').join("");
 $("movements-empty").classList.toggle("hidden",moves.length>0);
 }
-function resetForm(){$("product-form").reset();$("product-id").value="";$("p-qty").value="0";$("p-min").value="0";$("product-title").textContent="Cadastrar produto";$("cancel-edit").classList.add("hidden")}
+function resetForm(){$("product-form").reset();$("product-id").value="";$("p-qty").value="0";$("p-min").value="0";$("p-adjustment-note").value="";editingOriginalQty=null;$("adjustment-note-field").classList.add("hidden");$("p-adjustment-note").required=false;$("product-title").textContent="Cadastrar produto";$("cancel-edit").classList.add("hidden")}
+function updateAdjustmentNoteField(){const changed=Boolean($("product-id").value)&&editingOriginalQty!==null&&Number($("p-qty").value)!==editingOriginalQty;$("adjustment-note-field").classList.toggle("hidden",!changed);$("p-adjustment-note").required=changed;if(!changed)$("p-adjustment-note").value=""}
+$("p-qty").addEventListener("input",updateAdjustmentNoteField);
 $("product-form").addEventListener("submit",async e=>{
 e.preventDefault();
 const id=$("product-id").value;
 const name=$("p-name").value.trim(),unit=$("p-unit").value.trim();
 if(!name||!unit){msg("Preencha o nome e a unidade.");return}
 const data={name,category:$("p-category").value.trim(),unit,qty:Number($("p-qty").value),min:Number($("p-min").value||0),notes:$("p-notes").value.trim()};
+const quantityChanged=Boolean(id)&&editingOriginalQty!==null&&data.qty!==editingOriginalQty;
+const adjustmentNote=$("p-adjustment-note").value.trim();
 if(!Number.isFinite(data.qty)||!Number.isFinite(data.min)||data.qty<0||data.min<0){msg("Use quantidades iguais ou maiores que zero.");return}
+if(quantityChanged&&!adjustmentNote){msg("Informe o motivo do ajuste de estoque.");$("p-adjustment-note").focus();return}
 if(REMOTE_MODE){
   try{
-    if(id)await apiRequest("/api/products/"+encodeURIComponent(id),{method:"PUT",body:data});
+    if(id)await apiRequest("/api/products/"+encodeURIComponent(id),{method:"PUT",body:{...data,adjustmentNote}});
     else await apiRequest("/api/products",{method:"POST",body:data});
     await refreshRemote();resetForm();msg(id?"Produto atualizado no estoque compartilhado.":"Produto cadastrado no estoque compartilhado.");
   }catch(error){msg(error.message)}
   return;
 }
-if(id){const ix=products.findIndex(p=>p.id===id);if(ix>=0){const old=products[ix];if(old.qty!==data.qty)moves.push({id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),date:new Date().toISOString(),productId:id,name,unit,type:data.qty>old.qty?"entrada":"saida",qty:Math.abs(data.qty-old.qty),after:data.qty,note:"Ajuste feito no cadastro"});products[ix]={...old,...data}}msg("Produto atualizado.")}else{data.id=crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random();products.push(data);msg("Produto cadastrado.")}
+if(id){const ix=products.findIndex(p=>p.id===id);if(ix>=0){const old=products[ix];if(old.qty!==data.qty)moves.push({id:crypto.randomUUID?crypto.randomUUID():String(Date.now()),date:new Date().toISOString(),productId:id,name,unit,type:data.qty>old.qty?"entrada":"saida",qty:Math.abs(data.qty-old.qty),after:data.qty,note:adjustmentNote});products[ix]={...old,...data}}msg("Produto atualizado.")}else{data.id=crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random();products.push(data);if(data.qty>0)moves.push({id:crypto.randomUUID?crypto.randomUUID():String(Date.now())+"-initial",date:new Date().toISOString(),productId:data.id,name,unit,type:"entrada",qty:data.qty,after:data.qty,note:"Saldo inicial"});msg("Produto cadastrado.")}
 save();resetForm()
 });
 $("cancel-edit").addEventListener("click",resetForm);
 $("products-table").addEventListener("click",async e=>{
 const edit=e.target.closest("[data-edit]"),del=e.target.closest("[data-delete]");
-if(edit){const p=products.find(p=>p.id===edit.dataset.edit);if(!p)return;$("product-id").value=p.id;$("p-name").value=p.name;$("p-category").value=p.category||"";$("p-unit").value=p.unit;$("p-qty").value=p.qty;$("p-min").value=p.min||0;$("p-notes").value=p.notes||"";$("product-title").textContent="Editar produto";$("cancel-edit").classList.remove("hidden");$("p-name").focus();window.scrollTo({top:0,behavior:"smooth"})}
+if(edit){const p=products.find(p=>p.id===edit.dataset.edit);if(!p)return;$("product-id").value=p.id;$("p-name").value=p.name;$("p-category").value=p.category||"";$("p-unit").value=p.unit;$("p-qty").value=p.qty;editingOriginalQty=Number(p.qty);$("p-min").value=p.min||0;$("p-notes").value=p.notes||"";$("p-adjustment-note").value="";updateAdjustmentNoteField();$("product-title").textContent="Editar produto";$("cancel-edit").classList.remove("hidden");$("p-name").focus();window.scrollTo({top:0,behavior:"smooth"})}
 if(del){const p=products.find(p=>p.id===del.dataset.delete);if(!p)return;if(confirm('Excluir "'+p.name+'"? O histórico antigo será mantido.')){if(REMOTE_MODE){try{await apiRequest("/api/products/"+encodeURIComponent(p.id),{method:"DELETE"});await refreshRemote();msg("Produto excluído do estoque compartilhado.")}catch(error){msg(error.message)}}else{products=products.filter(x=>x.id!==p.id);save();msg("Produto excluído.")}}}
 });
 $("product-filter").addEventListener("input",render);
