@@ -130,8 +130,8 @@ async function authenticated(request, env) {
     const tableExists = await usersTableExists(env);
     const userCount = tableExists ? await countUsers(env) : 0;
     if (payload.sub === "estoque-equipe") {
-      // Legacy shared-password sessions are accepted only before user accounts exist.
-      if (userCount > 0) return null;
+      // As soon as the account table exists, only individual accounts may use the API.
+      if (tableExists || userCount > 0) return null;
       return {...payload,username:"equipe",displayName:"Equipe",role:"admin",legacy:true};
     }
     if (!tableExists) return null;
@@ -331,7 +331,11 @@ async function route(request, env) {
     if (typeof body.password !== "string" || body.password.length === 0) {
       throw new RequestError("Informe a senha de acesso.",400);
     }
-    const usersEnabled = await usersTableExists(env) && await countUsers(env)>0;
+    const accountTablePresent = await usersTableExists(env);
+    const usersEnabled = accountTablePresent && await countUsers(env)>0;
+    if (accountTablePresent && !usersEnabled) {
+      return json({error:"Configure o primeiro administrador pelo formulário de configuração inicial."},403);
+    }
     if (usersEnabled) {
       if (typeof body.username !== "string" || !body.username.trim()) {
         return json({error:"Informe seu usuário e sua senha individual."},400);
