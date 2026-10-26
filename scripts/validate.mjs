@@ -37,6 +37,12 @@ const wrangler = JSON.parse(configText.replace(/^\s*\/\/.*$/gm, ""));
 assert.ok(wrangler.d1_databases?.some((binding) => binding.binding === "DB"));
 assert.equal(wrangler.secrets, undefined, "Os segredos são gerenciados no painel do Cloudflare.");
 assert.ok(worker.includes("!env.APP_PASSWORD || !env.SESSION_SECRET"), "A API deve recusar login se os segredos não estiverem configurados.");
+assert.ok(worker.includes("const MAX_JSON_BODY_BYTES = 16 * 1024;"), "A API deve limitar o tamanho das requisições JSON.");
+assert.ok(worker.includes('contentType !== "application/json"'), "A API deve validar o tipo de conteúdo.");
+assert.ok(worker.includes("request.body?.getReader()"), "A API deve impor o limite do corpo durante a leitura.");
+assert.ok(worker.includes("Array.isArray(parsed)"), "A API deve rejeitar JSON que não seja um objeto.");
+assert.ok(worker.includes('headers.set("Permissions-Policy"'), "A API deve enviar cabeçalhos de segurança.");
+assert.ok(worker.includes('headers.set("Strict-Transport-Security"'), "A API deve enviar HSTS.");
 
 const packageInfo = JSON.parse(packageText);
 assert.equal(packageInfo.scripts?.["test:smoke"], "node scripts/smoke-test.mjs");
