@@ -24,6 +24,10 @@ function corsHeaders(request) {
 function withCors(response, request) {
   const headers = new Headers(response.headers);
   for (const [key, value] of Object.entries(corsHeaders(request))) headers.set(key, value);
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("X-Frame-Options", "DENY");
+  headers.set("Referrer-Policy", "no-referrer");
+  headers.set("Cache-Control", "no-store");
   return new Response(response.body, {status: response.status, statusText: response.statusText, headers});
 }
 function json(data, status = 200) {
@@ -243,7 +247,9 @@ export default {
     try {
       return withCors(await route(request,env),request);
     } catch (error) {
-      return withCors(json({error:error instanceof Error ? error.message : "Erro interno do servidor."},error instanceof RequestError ? error.status : 500),request);
+      const status = error instanceof RequestError ? error.status : 500;
+      const message = status === 500 ? "Erro interno do servidor. Confira a configuração da API e do banco." : error.message;
+      return withCors(json({error:message},status),request);
     }
   }
 };
