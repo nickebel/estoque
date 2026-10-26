@@ -1,4 +1,6 @@
 const SESSION_SECONDS = 12 * 60 * 60;
+const LOGIN_WINDOW_SECONDS = 15 * 60;
+const LOGIN_MAX_ATTEMPTS = 8;
 const ALLOWED_ORIGINS = new Set([
   "https://nickebel.github.io",
   "http://localhost:5500",
@@ -72,15 +74,46 @@ async function authenticated(request, env) {
     return payload.sub === "estoque-equipe" && Number(payload.exp) > Math.floor(Date.now()/1000);
   } catch { return false; }
 }
+async function checkLoginRateLimit(request, env, passwordMatches) {
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  const ipHash = await sign("estoque-login:" + ip, env.SESSION_SECRET);
+  const nowMs = Date.now();
+  const now = new Date(nowMs).toISOString();
+  const old = await env.DB.prepare("SELECT failed_count, window_started_at, locked_until FROM login_attempts WHERE ip_hash=?").bind(ipHash).first();
+
+  if (old?.locked_until && Date.parse(old.locked_until) > nowMs) {
+    return {allowed:false, ipHash, retryAfter:Math.max(1,Math.ceil((Date.parse(old.locked_until)-nowMs)/1000))};
+  }
+  if (passwordMatches) {
+    await env.DB.prepare("DELETE FROM login_attempts WHERE ip_hash=?").bind(ipHash).run();
+    return {allowed:true, ipHash};
+  }
+
+  const isCurrentWindow = old && nowMs - Date.parse(old.window_started_at) < LOGIN_WINDOW_SECONDS * 1000;
+  const count = isCurrentWindow ? Number(old.failed_count) + 1 : 1;
+  const windowStart = isCurrentWindow ? old.window_started_at : now;
+  const lockedUntil = count >= LOGIN_MAX_ATTEMPTS ? new Date(nowMs + LOGIN_WINDOW_SECONDS * 1000).toISOString() : null;
+
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO login_attempts (ip_hash,failed_count,window_started_at,locked_until) VALUES (?,?,?,?) ON CONFLICT(ip_hash) DO UPDATE SET failed_count=excluded.failed_count,window_started_at=excluded.window_started_at,locked_until=excluded.locked_until")
+      .bind(ipHash,count,windowStart,lockedUntil),
+    env.DB.prepare("DELETE FROM login_attempts WHERE window_started_at < ? AND ip_hash <> ?").bind(new Date(nowMs - 24*60*60*1000).toISOString(),ipHash)
+  ]);
+  return {allowed:false, ipHash, locked:Boolean(lockedUntil), retryAfter:lockedUntil?LOGIN_WINDOW_SECONDS:0};
+}
+
+class RequestError extends Error {
+  constructor(message, status = 400) { super(message); this.name = "RequestError"; this.status = status; }
+}
 async function readJson(request) {
   try { return await request.json(); }
-  catch { throw new Error("Envie um JSON válido."); }
+  catch { throw new RequestError("Envie um JSON válido."); }
 }
 function text(value, max = 180) { return String(value ?? "").trim().slice(0, max); }
 function amount(value, label = "Quantidade", allowZero = false) {
   const n = Number(value);
   if (!Number.isFinite(n) || (allowZero ? n < 0 : n <= 0) || n > 1000000000) {
-    throw new Error(label + " inválida.");
+    throw new RequestError(label + " inválida.");
   }
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
@@ -93,8 +126,8 @@ function mapMovement(row) {
 function nowIso() { return new Date().toISOString(); }
 function productInput(body) {
   const name = text(body.name, 100), unit = text(body.unit, 25);
-  if (!name) throw new Error("Informe o nome do produto.");
-  if (!unit) throw new Error("Informe a unidade de controle.");
+  if (!name) throw new RequestError("Informe o nome do produto.");
+  if (!unit) throw new RequestError("Informe a unidade de controle.");
   return {
     name, category:text(body.category,60), unit,
     qty:amount(body.qty ?? 0,"Quantidade",true),
@@ -110,7 +143,14 @@ async function route(request, env) {
   if (path === "/api/login" && request.method === "POST") {
     if (!env.APP_PASSWORD || !env.SESSION_SECRET) return json({error:"Faltam configurar os segredos APP_PASSWORD e SESSION_SECRET no Cloudflare."},503);
     const body = await readJson(request);
-    if (!constantTimeEqual(body.password || "", env.APP_PASSWORD)) return json({error:"Senha incorreta."},401);
+    const rate = await checkLoginRateLimit(request, env, constantTimeEqual(body.password || "", env.APP_PASSWORD));
+    if (!rate.allowed) {
+      const headers = rate.retryAfter ? {"Retry-After":String(rate.retryAfter)} : {};
+      return new Response(JSON.stringify({error:rate.locked ? "Muitas tentativas. Aguarde 15 minutos antes de tentar novamente." : "Senha incorreta."}), {
+        status:rate.locked ? 429 : 401,
+        headers:{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store",...headers}
+      });
+    }
     return json({token:await issueToken(env.SESSION_SECRET),expiresIn:SESSION_SECONDS});
   }
   if (!path.startsWith("/api/")) return json({error:"Rota não encontrada."},404);
@@ -203,7 +243,7 @@ export default {
     try {
       return withCors(await route(request,env),request);
     } catch (error) {
-      return withCors(json({error:error instanceof Error ? error.message : "Erro interno do servidor."},500),request);
+      return withCors(json({error:error instanceof Error ? error.message : "Erro interno do servidor."},error instanceof RequestError ? error.status : 500),request);
     }
   }
 };
