@@ -26,7 +26,10 @@ new vm.Script(serviceWorker.replace(/\bself\b/g, "globalThis"), { filename: "sw.
 new vm.Script(apiConfig, { filename: "api-config.js" });
 
 const manifest = JSON.parse(manifestText);
-assert.equal(manifest.name, "Estoque da Padaria");
+assert.equal(manifest.name, "Capricho | Gestão de Estoque");
+assert.equal(manifest.short_name, "Capricho");
+assert.equal(manifest.theme_color, "#5E3023");
+assert.equal(manifest.background_color, "#F3E9DC");
 assert.ok(manifest.icons.some((icon) => icon.sizes === "192x192"));
 assert.ok(manifest.icons.some((icon) => icon.sizes === "512x512"));
 
