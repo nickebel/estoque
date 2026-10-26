@@ -1,4 +1,4 @@
-// Runtime secrets APP_PASSWORD e SESSION_SECRET são configurados no painel do Worker.
+// Estoque API: runtime secrets are bound to the Production Worker in Cloudflare Settings > Variables and Secrets.
 const SESSION_SECONDS = 12 * 60 * 60;
 const LOGIN_WINDOW_SECONDS = 15 * 60;
 const LOGIN_MAX_ATTEMPTS = 8;
