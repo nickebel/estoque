@@ -147,10 +147,10 @@ document.querySelectorAll("[data-view]").forEach(b=>b.addEventListener("click",(
 
 const APP_TOUR_KEY="caprichoAppTourSeenV1";
 const APP_TOUR_STEPS=[
- {view:"inicio",label:"PASSO 1 · VISÃO GERAL",title:"Tudo começa por aqui.",description:"Veja o total de produtos, os itens no limite mínimo e as movimentações do dia. A visão geral ajuda a identificar rapidamente onde prestar atenção.",tip:"Use esta tela para conferir o panorama do estoque antes de começar a rotina.",target:"#view-inicio .stats"},
- {view:"produtos",label:"PASSO 2 · PRODUTOS",title:"Cada item, com suas informações.",description:"Cadastre produtos, defina categoria, unidade de controle e quantidade mínima. A lista permite pesquisar e editar os itens registrados.",tip:"Quando alterar uma quantidade diretamente no cadastro, o sistema pede o motivo do ajuste para manter o histórico organizado.",target:"#view-produtos .panel:last-of-type"},
- {view:"movimentacoes",label:"PASSO 3 · MOVIMENTAÇÕES",title:"Registre o que entra e o que sai.",description:"Escolha o produto, indique entrada ou saída e informe a quantidade. O saldo é atualizado e a movimentação aparece no histórico.",tip:"O sistema impede uma saída maior que a quantidade disponível e mantém o registro das operações.",target:"#view-movimentacoes .panel:nth-of-type(2)"},
- {view:"relatorios",label:"PASSO 4 · RELATÓRIOS",title:"Informações prontas para consultar e compartilhar.",description:"Gere PDFs do estoque completo, compartilhe relatórios e exporte uma cópia de backup para guardar com segurança.",tip:"Guarde os backups num local seguro e combine uma rotina de cópias de segurança para a equipe.",target:"#view-relatorios .report-grid"}
+ {view:"inicio",label:"PASSO 1 · VISÃO GERAL",title:"Veja o resumo do estoque.",description:"Aqui você vê quantos produtos estão cadastrados, quais estão no limite mínimo e quantas entradas e saídas ocorreram hoje.",tip:"Use o resumo para descobrir rapidamente o que precisa de atenção.",target:"#view-inicio .stats"},
+ {view:"produtos",label:"PASSO 2 · PRODUTOS",title:"Cadastre e encontre produtos.",description:"Em Produtos, informe o nome, a categoria, a unidade (kg, pacote, unidade etc.), a quantidade disponível e o estoque mínimo.",tip:"Use sempre a mesma unidade para cada produto. Isso ajuda a manter o saldo correto.",target:"#view-produtos .panel:last-of-type"},
+ {view:"movimentacoes",label:"PASSO 3 · MOVIMENTAÇÕES",title:"Registre tudo que entra e sai.",description:"Selecione o produto, escolha Entrada ou Saída, digite a quantidade e salve. O sistema atualiza o saldo e registra a operação no histórico.",tip:"Confira o produto e a quantidade antes de salvar. Saídas maiores que o saldo disponível são bloqueadas.",target:"#view-movimentacoes .panel:nth-of-type(2)"},
+ {view:"relatorios",label:"PASSO 4 · RELATÓRIOS",title:"Gere relatórios quando precisar.",description:"Em Relatórios, escolha o PDF do estoque completo ou o histórico de movimentações. Você também pode exportar uma cópia de segurança.",tip:"Guarde os backups em um local seguro e faça cópias regularmente.",target:"#view-relatorios .report-grid"}
 ];
 let appTourIndex=-1;
 const appTour=$("app-tour");
@@ -163,10 +163,10 @@ function closeAppTour(){
 function showAppTourWelcome(){
  appTourIndex=-1;clearAppTourHighlight();
  $("app-tour-step-label").textContent="BOAS-VINDAS";$("app-tour-step-count").textContent="Cerca de 1 minuto";$("app-tour-progress-bar").style.width="5%";
- $("app-tour-title").textContent="Um jeito mais simples de controlar o estoque.";
- $("app-tour-description").textContent="Conheça as principais áreas do sistema em um tour rápido. Vamos mostrar onde consultar produtos, registrar movimentações e gerar relatórios.";
- $("app-tour-tip-text").textContent="Você pode sair do tutorial a qualquer momento. Ele também fica disponível no botão “Como usar”.";
- $("app-tour-back").hidden=true;$("app-tour-next").innerHTML='Começar tour <span aria-hidden="true">→</span>';$("app-tour-explore").textContent="Explorar sozinho";
+ $("app-tour-title").textContent="Aprenda a usar em quatro passos.";
+ $("app-tour-description").textContent="Vamos mostrar onde ver o resumo, consultar produtos, registrar entradas e saídas e gerar relatórios.";
+ $("app-tour-tip-text").textContent="Use “Próximo” para avançar. Você pode fechar a qualquer momento e voltar pelo botão “Como usar”.";
+ $("app-tour-back").hidden=true;$("app-tour-next").innerHTML='Iniciar tutorial <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>';$("app-tour-explore").textContent="Explorar sem tutorial";
  appTour.classList.remove("hidden");$("app-tour-next").focus();
 }
 function showAppTourStep(index){
@@ -175,7 +175,7 @@ function showAppTourStep(index){
  $("app-tour-step-label").textContent=step.label;$("app-tour-step-count").textContent=(index+1)+" de "+APP_TOUR_STEPS.length;
  $("app-tour-progress-bar").style.width=((index+1)/APP_TOUR_STEPS.length*100)+"%";
  $("app-tour-title").textContent=step.title;$("app-tour-description").textContent=step.description;$("app-tour-tip-text").textContent=step.tip;
- $("app-tour-back").hidden=false;$("app-tour-next").innerHTML=index===APP_TOUR_STEPS.length-1?'Concluir <span aria-hidden="true">✓</span>':'Próxima etapa <span aria-hidden="true">→</span>';
+ $("app-tour-back").hidden=false;$("app-tour-next").innerHTML=index===APP_TOUR_STEPS.length-1?'Concluir tutorial <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg>':'Próximo <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>';
  $("app-tour-explore").textContent="Sair do tour";appTour.classList.remove("hidden");
  const target=document.querySelector(step.target);if(target){target.classList.add("app-tour-highlight");target.scrollIntoView({behavior:"smooth",block:"center"})}
  $("app-tour-next").focus();
