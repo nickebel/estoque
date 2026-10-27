@@ -65,6 +65,7 @@ async function initRemote(){
       await refreshRemote();
       $("login-overlay").classList.add("hidden");
       msg("Conectado ao estoque compartilhado.");
+      maybeShowAppTour();
       return;
     }catch(error){
       authToken="";sessionStorage.removeItem("estoquePadariaApiToken");
@@ -133,6 +134,7 @@ $("login-form").addEventListener("submit",async e=>{
     $("toggle-password").setAttribute("aria-label","Mostrar senha");
     $("toggle-password").setAttribute("aria-pressed","false");
     msg("Conectado ao estoque compartilhado.");
+    maybeShowAppTour();
   }catch(err){error.textContent=err.message||"Falha ao entrar. Tente novamente."}
   finally{submit.disabled=false;submit.textContent="Acessar estoque"}
 });
@@ -142,6 +144,50 @@ function qty(p){return num(p.qty)+" "+p.unit}
 function findProducts(query){const q=norm(query);return products.filter(p=>norm(p.name+" "+p.category+" "+p.notes).includes(q))}
 function showView(v){document.querySelectorAll(".view").forEach(el=>el.classList.toggle("active",el.id==="view-"+v));document.querySelectorAll("[data-view]").forEach(el=>el.classList.toggle("active",el.dataset.view===v));$("crumb").textContent=({inicio:"Visão geral",produtos:"Produtos",movimentacoes:"Movimentações",relatorios:"Relatórios e backup"})[v]||"Visão geral";window.scrollTo({top:0,behavior:"smooth"})}
 document.querySelectorAll("[data-view]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.view)));
+
+const APP_TOUR_KEY="caprichoAppTourSeenV1";
+const APP_TOUR_STEPS=[
+ {view:"inicio",label:"PASSO 1 · VISÃO GERAL",title:"Tudo começa por aqui.",description:"Veja o total de produtos, os itens no limite mínimo e as movimentações do dia. A visão geral ajuda a identificar rapidamente onde prestar atenção.",tip:"Use esta tela para conferir o panorama do estoque antes de começar a rotina.",target:"#view-inicio .stats"},
+ {view:"produtos",label:"PASSO 2 · PRODUTOS",title:"Cada item, com suas informações.",description:"Cadastre produtos, defina categoria, unidade de controle e quantidade mínima. A lista permite pesquisar e editar os itens registrados.",tip:"Quando alterar uma quantidade diretamente no cadastro, o sistema pede o motivo do ajuste para manter o histórico organizado.",target:"#view-produtos .panel:last-of-type"},
+ {view:"movimentacoes",label:"PASSO 3 · MOVIMENTAÇÕES",title:"Registre o que entra e o que sai.",description:"Escolha o produto, indique entrada ou saída e informe a quantidade. O saldo é atualizado e a movimentação aparece no histórico.",tip:"O sistema impede uma saída maior que a quantidade disponível e mantém o registro das operações.",target:"#view-movimentacoes .panel:nth-of-type(2)"},
+ {view:"relatorios",label:"PASSO 4 · RELATÓRIOS",title:"Informações prontas para consultar e compartilhar.",description:"Gere PDFs do estoque completo, compartilhe relatórios e exporte uma cópia de backup para guardar com segurança.",tip:"Guarde os backups num local seguro e combine uma rotina de cópias de segurança para a equipe.",target:"#view-relatorios .report-grid"}
+];
+let appTourIndex=-1;
+const appTour=$("app-tour");
+function clearAppTourHighlight(){document.querySelectorAll(".app-tour-highlight").forEach(el=>el.classList.remove("app-tour-highlight"))}
+function closeAppTour(){
+ appTour.classList.add("hidden");clearAppTourHighlight();
+ try{localStorage.setItem(APP_TOUR_KEY,"seen")}catch{}
+ $("help-tour-open").focus({preventScroll:true});
+}
+function showAppTourWelcome(){
+ appTourIndex=-1;clearAppTourHighlight();
+ $("app-tour-step-label").textContent="BOAS-VINDAS";$("app-tour-step-count").textContent="Cerca de 1 minuto";$("app-tour-progress-bar").style.width="5%";
+ $("app-tour-title").textContent="Um jeito mais simples de controlar o estoque.";
+ $("app-tour-description").textContent="Conheça as principais áreas do sistema em um tour rápido. Vamos mostrar onde consultar produtos, registrar movimentações e gerar relatórios.";
+ $("app-tour-tip-text").textContent="Você pode sair do tutorial a qualquer momento. Ele também fica disponível no botão “Como usar”.";
+ $("app-tour-back").hidden=true;$("app-tour-next").innerHTML='Começar tour <span aria-hidden="true">→</span>';$("app-tour-explore").textContent="Explorar sozinho";
+ appTour.classList.remove("hidden");$("app-tour-next").focus();
+}
+function showAppTourStep(index){
+ const step=APP_TOUR_STEPS[index];if(!step)return;
+ appTourIndex=index;clearAppTourHighlight();showView(step.view);
+ $("app-tour-step-label").textContent=step.label;$("app-tour-step-count").textContent=(index+1)+" de "+APP_TOUR_STEPS.length;
+ $("app-tour-progress-bar").style.width=((index+1)/APP_TOUR_STEPS.length*100)+"%";
+ $("app-tour-title").textContent=step.title;$("app-tour-description").textContent=step.description;$("app-tour-tip-text").textContent=step.tip;
+ $("app-tour-back").hidden=false;$("app-tour-next").innerHTML=index===APP_TOUR_STEPS.length-1?'Concluir <span aria-hidden="true">✓</span>':'Próxima etapa <span aria-hidden="true">→</span>';
+ $("app-tour-explore").textContent="Sair do tour";appTour.classList.remove("hidden");
+ const target=document.querySelector(step.target);if(target){target.classList.add("app-tour-highlight");target.scrollIntoView({behavior:"smooth",block:"center"})}
+ $("app-tour-next").focus();
+}
+function maybeShowAppTour(){if(REMOTE_MODE){try{if(localStorage.getItem(APP_TOUR_KEY)!=="seen")showAppTourWelcome()}catch{}}}
+$("help-tour-open").addEventListener("click",showAppTourWelcome);$("welcome-tour-open").addEventListener("click",showAppTourWelcome);
+$("app-tour-close").addEventListener("click",closeAppTour);$("app-tour-explore").addEventListener("click",closeAppTour);
+$("app-tour-back").addEventListener("click",()=>{if(appTourIndex<=0)showAppTourWelcome();else showAppTourStep(appTourIndex-1)});
+$("app-tour-next").addEventListener("click",()=>{if(appTourIndex<0){showAppTourStep(0);return}if(appTourIndex>=APP_TOUR_STEPS.length-1){closeAppTour();msg("Tutorial concluído. Explore o sistema!");return}showAppTourStep(appTourIndex+1)});
+appTour.addEventListener("click",event=>{if(event.target===appTour)closeAppTour()});
+document.addEventListener("keydown",event=>{if(event.key==="Escape"&&!appTour.classList.contains("hidden"))closeAppTour()});
+
 document.querySelectorAll("[data-goto]").forEach(b=>b.addEventListener("click",()=>showView(b.dataset.goto)));
 $("today").textContent=new Date().toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"short",year:"numeric"});
 function auditActionLabel(action){
