@@ -289,5 +289,67 @@ $("import-backup").addEventListener("change",async e=>{
 const file=e.target.files[0];if(!file)return;
 if(REMOTE_MODE){msg("A restauração de backup no banco online ainda não está habilitada. O estoque compartilhado não foi alterado.");e.target.value="";return}
 try{const d=JSON.parse(await file.text());if(!Array.isArray(d.products)||!Array.isArray(d.moves))throw new Error("Formato inválido");if(!confirm("A importação substituirá os dados atuais deste navegador. Continuar?"))return;products=d.products;moves=d.moves;save();resetForm();msg("Backup restaurado.")}catch(err){msg("Não foi possível ler o backup. Escolha um JSON exportado pelo aplicativo.")}finally{e.target.value=""}});
-load();render();initRemote();
+
+const DEMO_TOUR_STEPS=[
+ {view:"inicio",label:"PASSO 1 · VISÃO GERAL",title:"Tudo começa por aqui.",description:"A tela inicial resume quantos produtos estão cadastrados, quais precisam de atenção e quantas movimentações aconteceram hoje.",tip:"Bom para bater o olho e identificar rapidamente itens com estoque baixo.",target:"#view-inicio .heading"},
+ {view:"produtos",label:"PASSO 2 · PRODUTOS",title:"Encontre cada item com facilidade.",description:"Consulte produtos por nome, categoria, quantidade, unidade e limite mínimo. A lista mostra quais itens estão disponíveis e quais precisam de reposição.",tip:"Na versão completa, o cadastro e a edição dos produtos serão usados pela equipe. Aqui, os campos estão bloqueados.",target:"#view-produtos .heading"},
+ {view:"movimentacoes",label:"PASSO 3 · MOVIMENTAÇÕES",title:"Acompanhe entradas e saídas.",description:"O histórico ajuda a entender o que chegou, o que foi utilizado e como o saldo de cada produto mudou ao longo do tempo.",tip:"As movimentações exibidas são exemplos, criados apenas para esta apresentação.",target:"#view-movimentacoes .heading"},
+ {view:"relatorios",label:"PASSO 4 · RELATÓRIOS",title:"Transforme os dados em informação.",description:"Gere um PDF com a visão do estoque ou com o histórico de movimentações, pronto para consultar e compartilhar.",tip:"Os PDFs desta prévia são gerados com produtos fictícios. O backup fica desativado por segurança.",target:"#view-relatorios .heading"}
+];
+let demoTourIndex=-1;
+const demoTour=$("demo-tour");
+function clearDemoTourFocus(){document.querySelectorAll(".tour-highlight").forEach(el=>el.classList.remove("tour-highlight"))}
+function closeDemoTour(){demoTour.classList.add("hidden");clearDemoTourFocus()}
+function showDemoTourWelcome(){
+ demoTourIndex=-1;clearDemoTourFocus();
+ $("tour-step-label").textContent="BEM-VINDO";
+ $("tour-step-count").textContent="Cerca de 1 minuto";
+ $("tour-progress-bar").style.width="5%";
+ $("tour-title").textContent="Conheça o sistema em 1 minuto";
+ $("tour-description").textContent="Um tour rápido para conhecer a visão geral, consultar produtos, acompanhar movimentações e visualizar relatórios. Você está em uma demonstração com dados fictícios.";
+ $("tour-tip-text").textContent="Explore as telas livremente. Nesta prévia, as alterações ficam bloqueadas e nada é enviado para o estoque real.";
+ $("tour-back").hidden=true;
+ $("tour-next").innerHTML='Começar tour <span aria-hidden="true">→</span>';
+ $("tour-explore").textContent="Explorar sozinho";
+ demoTour.classList.remove("hidden");
+ $("tour-next").focus();
+}
+function showDemoTourStep(index){
+ const step=DEMO_TOUR_STEPS[index];
+ if(!step)return;
+ demoTourIndex=index;clearDemoTourFocus();
+ const nav=document.querySelector('[data-view="'+step.view+'"]');
+ if(nav)nav.click();
+ $("tour-step-label").textContent=step.label;
+ $("tour-step-count").textContent=(index+1)+" de "+DEMO_TOUR_STEPS.length;
+ $("tour-progress-bar").style.width=((index+1)/DEMO_TOUR_STEPS.length*100)+"%";
+ $("tour-title").textContent=step.title;
+ $("tour-description").textContent=step.description;
+ $("tour-tip-text").textContent=step.tip;
+ $("tour-back").hidden=false;
+ $("tour-next").innerHTML=index===DEMO_TOUR_STEPS.length-1?'Concluir <span aria-hidden="true">✓</span>':'Próxima etapa <span aria-hidden="true">→</span>';
+ $("tour-explore").textContent="Sair do tour";
+ demoTour.classList.remove("hidden");
+ const target=document.querySelector(step.target);
+ if(target)target.classList.add("tour-highlight");
+ $("tour-next").focus();
+}
+$("demo-tour-open").addEventListener("click",showDemoTourWelcome);
+$("tour-close").addEventListener("click",closeDemoTour);
+$("tour-explore").addEventListener("click",closeDemoTour);
+$("tour-back").addEventListener("click",()=>{
+ if(demoTourIndex<=0)showDemoTourWelcome();
+ else showDemoTourStep(demoTourIndex-1);
+});
+$("tour-next").addEventListener("click",()=>{
+ if(demoTourIndex<0){showDemoTourStep(0);return}
+ if(demoTourIndex>=DEMO_TOUR_STEPS.length-1){closeDemoTour();msg("Tour concluído. Explore a demonstração!");return}
+ showDemoTourStep(demoTourIndex+1);
+});
+demoTour.addEventListener("click",event=>{if(event.target===demoTour)closeDemoTour()});
+document.addEventListener("keydown",event=>{
+ if(event.key==="Escape"&&!demoTour.classList.contains("hidden"))closeDemoTour();
+});
+
+load();render();initRemote();showDemoTourWelcome();
 })();
